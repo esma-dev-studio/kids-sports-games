@@ -1,11 +1,12 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { GameCanvas } from './components/GameCanvas'
 import { MODE_LABEL } from './game/config'
 import type { Mode, RoundResult } from './game/types'
 import { unlock } from './game/audio'
 import { addScore, load, qualifies, RANK_MAX, save, type SaveData, type ScoreEntry } from './game/storage'
+import { BADGES, accumulate, earnedIds, type Badge } from './game/badges'
 
-type Screen = 'menu' | 'tutorial' | 'playing' | 'result' | 'ranking'
+type Screen = 'menu' | 'tutorial' | 'playing' | 'result' | 'ranking' | 'badges'
 const MODES: Mode[] = ['easy', 'normal']
 
 function Stars({ n }: { n: number }) {
@@ -35,6 +36,23 @@ function RankTable({ scores, highlight }: { scores: ScoreEntry[]; highlight?: nu
   )
 }
 
+function BadgeGrid({ earned }: { earned: Set<string> }) {
+  return (
+    <div className="badge-grid">
+      {BADGES.map((b) => {
+        const got = earned.has(b.id)
+        return (
+          <div key={b.id} className={got ? `badge got ${b.tier}` : 'badge locked'}>
+            <span className="badge-icon">{got ? b.icon : '🔒'}</span>
+            <span className="badge-name">{got ? b.name : '？？？'}</span>
+            <span className="badge-desc">{b.desc}</span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 export default function App() {
   const [data, setData] = useState<SaveData>(() => load())
   const [screen, setScreen] = useState<Screen>('menu')
@@ -43,6 +61,7 @@ export default function App() {
   const [nameInput, setNameInput] = useState('')
   const [newRank, setNewRank] = useState<number | null>(null)
   const [registered, setRegistered] = useState(false)
+  const [newBadges, setNewBadges] = useState<Badge[]>([])
 
   const persist = useCallback((patch: Partial<SaveData>) => {
     setData((prev) => {
@@ -70,12 +89,18 @@ export default function App() {
   }, [persist, beginPlay])
 
   const onEnd = useCallback((r: RoundResult) => {
-    const fresh = load()
+    const prev = load()
+    const stats = accumulate(prev.stats, r)
+    const earned = earnedIds(stats)
+    const newly = earned.filter((id) => !prev.badges.includes(id))
+    const next: SaveData = { ...prev, stats, badges: earned }
+    save(next)
+    setData(next)
     setResult(r)
-    setData(fresh)
-    setNameInput(fresh.lastName || 'プレイヤー')
+    setNameInput(next.lastName || 'プレイヤー')
     setNewRank(null)
     setRegistered(false)
+    setNewBadges(BADGES.filter((b) => newly.includes(b.id)))
     setScreen('result')
   }, [])
 
@@ -90,6 +115,7 @@ export default function App() {
   const showBackdrop = screen === 'menu' || screen === 'tutorial' || screen === 'result' || screen === 'ranking'
   const best = data.best
   const canRegister = !!result && !registered && qualifies(data.scores, result.score)
+  const earnedSet = useMemo(() => new Set(data.badges), [data.badges])
 
   return (
     <div className="app">
@@ -125,7 +151,10 @@ export default function App() {
                 ))}
               </div>
               <button className="cta" onClick={onStart}>はじめる</button>
-              <button className="rank-link" onClick={() => setScreen('ranking')}>ランキングを見る</button>
+              <div className="sub-links">
+                <button className="rank-link" onClick={() => setScreen('ranking')}>ランキング</button>
+                <button className="rank-link" onClick={() => setScreen('badges')}>バッジ図鑑 {data.badges.length}/{BADGES.length}</button>
+              </div>
               <div className="best">
                 自己ベスト｜スコア <b>{best.score}</b>　できあがり <b>{best.plates}</b>　コンボ <b>{best.combo}</b>
               </div>
@@ -176,6 +205,20 @@ export default function App() {
                 </div>
               </div>
 
+              {newBadges.length > 0 && (
+                <div className="new-badges">
+                  <p className="nb-title">あたらしいバッジ {newBadges.length}こ！</p>
+                  <div className="nb-list">
+                    {newBadges.slice(0, 8).map((b) => (
+                      <span key={b.id} className={`nb-item ${b.tier}`}>
+                        <span className="nb-ic">{b.icon}</span>{b.name}
+                      </span>
+                    ))}
+                    {newBadges.length > 8 && <span className="nb-more">ほか{newBadges.length - 8}こ</span>}
+                  </div>
+                </div>
+              )}
+
               <div className="rank-block">
                 {canRegister && (
                   <div className="rank-entry">
@@ -213,6 +256,18 @@ export default function App() {
           </div>
         )}
       </div>
+
+      {screen === 'badges' && (
+        <div className="badges-modal">
+          <div className="badges-inner">
+            <div className="badges-head">
+              <h2>バッジ図鑑 <span className="badges-count">{data.badges.length} / {BADGES.length}</span></h2>
+              <button className="ghost-btn" onClick={() => setScreen('menu')}>とじる</button>
+            </div>
+            <BadgeGrid earned={earnedSet} />
+          </div>
+        </div>
+      )}
 
       <footer className="app-foot">
         鍛わるのは主に「周辺視野・全体把握・状況判断」の力。実際のバスケ／サッカーの上達を保証するものではありません。

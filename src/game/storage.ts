@@ -1,4 +1,5 @@
 import type { Mode } from './types'
+import { EMPTY_STATS, type Stats } from './badges'
 
 const KEY = 'signal-hero:v1'
 
@@ -19,6 +20,8 @@ export interface SaveData {
   best: Best
   scores: ScoreEntry[]
   lastName: string
+  stats: Stats
+  badges: string[]
   tutorialSeen: boolean
   mode: Mode
   reducedMotion: boolean
@@ -29,6 +32,8 @@ const DEFAULT: SaveData = {
   best: { score: 0, combo: 0, gaman: 0 },
   scores: [],
   lastName: '',
+  stats: EMPTY_STATS,
+  badges: [],
   tutorialSeen: false,
   mode: 'easy',
   reducedMotion: false,
@@ -45,6 +50,8 @@ export function load(): SaveData {
       ...parsed,
       best: { ...DEFAULT.best, ...(parsed.best ?? {}) },
       scores: Array.isArray(parsed.scores) ? parsed.scores.slice(0, RANK_MAX) : [],
+      stats: { ...EMPTY_STATS, ...(parsed.stats ?? {}) },
+      badges: Array.isArray(parsed.badges) ? parsed.badges : [],
     }
   } catch {
     return { ...DEFAULT }
