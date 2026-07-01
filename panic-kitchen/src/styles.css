@@ -1,0 +1,169 @@
+:root {
+  --bg: #fdeede;
+  --bg2: #f6dcc0;
+  --ink: #4a3115;
+  --ink-soft: #8a6a45;
+  --accent: #e0771f;
+  --accent-dark: #b95c12;
+  --card: #fffaf3;
+  --line: rgba(74, 49, 21, 0.14);
+  --gold: #eaa720;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  min-height: 100%;
+  background: linear-gradient(160deg, var(--bg), var(--bg2));
+  color: var(--ink);
+  font-family: system-ui, -apple-system, 'Segoe UI', 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.app { max-width: 760px; margin: 0 auto; padding: 20px 16px 32px; }
+
+.app-head { text-align: center; margin-bottom: 14px; }
+.app-head h1 { margin: 0; font-size: clamp(24px, 6vw, 34px); letter-spacing: 0.02em; color: var(--accent-dark); }
+.tagline { margin: 4px 0 0; color: var(--ink-soft); font-size: 14px; }
+.tagline b { color: var(--accent-dark); }
+
+.stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1040 / 620;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(74, 49, 21, 0.18);
+  background: #fdf3e3;
+}
+
+.game-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(74, 49, 21, 0.34);
+  backdrop-filter: blur(2px);
+}
+
+.panel {
+  position: relative;
+  width: 100%;
+  max-width: 440px;
+  background: var(--card);
+  border-radius: 20px;
+  padding: 22px 22px 20px;
+  text-align: center;
+  box-shadow: 0 12px 34px rgba(74, 49, 21, 0.28);
+}
+
+.panel-title { margin: 0 0 12px; font-size: 22px; color: var(--accent-dark); }
+.panel-sub { color: var(--ink-soft); font-size: 13px; line-height: 1.6; margin: 10px 0 0; }
+.panel-sub.big { font-size: 15px; color: var(--ink); margin: 2px 0 6px; }
+
+.mode-row { display: flex; gap: 10px; justify-content: center; margin: 16px 0; }
+.mode {
+  flex: 1;
+  max-width: 150px;
+  padding: 10px 8px;
+  border-radius: 12px;
+  border: 2px solid var(--line);
+  background: #fdf1e2;
+  color: var(--ink-soft);
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.mode.sel { border-color: var(--accent); background: rgba(224, 119, 31, 0.12); color: var(--accent-dark); }
+
+.cta {
+  display: block;
+  width: 100%;
+  padding: 15px;
+  margin: 6px 0 0;
+  border: none;
+  border-radius: 14px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 19px;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 5px 0 var(--accent-dark);
+  transition: transform 0.06s ease, box-shadow 0.06s ease;
+}
+.cta:active { transform: translateY(3px); box-shadow: 0 2px 0 var(--accent-dark); }
+
+.ghost-btn {
+  padding: 13px 20px;
+  border-radius: 14px;
+  border: 2px solid var(--line);
+  background: #fff;
+  color: var(--ink-soft);
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.btn-row { display: flex; gap: 10px; margin-top: 8px; }
+.btn-row .cta { flex: 2; }
+.btn-row .ghost-btn { flex: 1; }
+
+.best { margin-top: 14px; font-size: 12px; color: var(--ink-soft); }
+.best b { color: var(--ink); }
+
+.toggles { display: flex; gap: 18px; justify-content: center; margin-top: 14px; font-size: 13px; color: var(--ink-soft); }
+.toggles label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+
+.how { text-align: left; margin: 8px auto 0; padding-left: 18px; max-width: 360px; line-height: 1.9; }
+.how li { margin-bottom: 2px; }
+
+.score-row { display: flex; gap: 12px; margin: 8px 0 4px; }
+.metric {
+  flex: 1;
+  background: #fdf1e2;
+  border-radius: 14px;
+  padding: 12px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.metric-label { font-size: 13px; color: var(--ink-soft); font-weight: 700; }
+.metric-sub { font-size: 11px; color: var(--ink-soft); }
+
+.stars { font-size: 22px; letter-spacing: 2px; }
+.stars .star { color: #e4d6c4; }
+.stars .star.on { color: var(--gold); }
+
+.ribbon {
+  position: absolute;
+  top: -12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--gold);
+  color: #fff;
+  font-weight: 800;
+  font-size: 13px;
+  padding: 5px 16px;
+  border-radius: 999px;
+  box-shadow: 0 4px 12px rgba(234, 167, 32, 0.4);
+}
+
+.app-foot { margin-top: 16px; text-align: center; font-size: 11px; color: var(--ink-soft); line-height: 1.6; }
+
+@media (max-width: 480px) {
+  .score-row { flex-direction: column; }
+  .mode { max-width: none; }
+}

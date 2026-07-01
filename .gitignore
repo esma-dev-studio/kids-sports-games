@@ -1,0 +1,12 @@
+node_modules
+dist
+dist-ssr
+_site
+*.local
+.DS_Store
+.vite
+
+# tsc -b / vite.config のビルド生成物
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts

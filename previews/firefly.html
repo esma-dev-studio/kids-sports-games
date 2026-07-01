@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ホタルレスキュー 〜きらめきをまもれ〜 — プレビュー</title>
+<style>
+:root{
+  --surface-0:#f4f3ee; --surface-1:#fcfcfb; --surface-2:#ffffff;
+  --text-primary:#0b0b0b; --text-secondary:#52514e; --text-muted:#898781;
+  --text-accent:#185fa5; --bg-accent:#e6f1fb;
+  --border:rgba(11,11,11,0.10); --border-strong:rgba(11,11,11,0.18);
+  --border-accent:#378add; --radius:8px;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --surface-0:#1a1a19; --surface-1:#232322; --surface-2:#2b2b29;
+    --text-primary:#ffffff; --text-secondary:#c3c2b7; --text-muted:#8f8e88;
+    --text-accent:#85b7eb; --bg-accent:#0c447c;
+    --border:rgba(255,255,255,0.12); --border-strong:rgba(255,255,255,0.22);
+    --border-accent:#3a86dd;
+  }
+}
+html,body{margin:0;background:var(--surface-0);color:var(--text-primary);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;}
+.page{max-width:740px;margin:0 auto;padding:18px 16px 40px;box-sizing:border-box;}
+</style>
+</head>
+<body>
+<div class="page">
+<h2 class="firefly-sr-only">夜のホタルの中から、最初に黄色く光った「まもりホタル」を覚えて、動いたあとにどれだったか選んで瓶に集める子ども向け記憶ゲームのプレビュー。</h2>
+<div class="firefly-frame">
+  <style>
+    .firefly-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;}
+    .firefly-frame{background:var(--surface-1);border-radius:12px;padding:12px;max-width:100%;box-sizing:border-box;font-family:system-ui,-apple-system,sans-serif;}
+    .firefly-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:2px 4px 10px;}
+    .firefly-title{font-size:16px;font-weight:700;color:var(--text-primary);letter-spacing:.02em;}
+    .firefly-hint{font-size:13px;color:var(--text-secondary);}
+    .firefly-hint b{color:var(--text-primary);font-weight:600;}
+    #firefly-canvas{display:block;width:100%;height:auto;border-radius:8px;cursor:pointer;touch-action:none;}
+  </style>
+  <div class="firefly-head">
+    <div class="firefly-title">ホタルレスキュー 〜きらめきをまもれ〜</div>
+    <div class="firefly-hint">黄色いホタルを<b>おぼえて</b>、動いたあと<b>タップ</b>で当てよう</div>
+  </div>
+  <canvas id="firefly-canvas" width="1040" height="620" style="display:block;width:100%;height:auto;border-radius:8px;"></canvas>
+</div>
+<script>
+(function(){
+  var canvas = document.getElementById('firefly-canvas');
+  if(!canvas || !canvas.getContext){ return; }
+  var ctx = canvas.getContext('2d');
+  if(!ctx){ return; }
+  var W = canvas.width, H = canvas.height;
+
+  var PHASE = { SHOW:0, MIX:1, STOP:2, ANSWER:3, RESULT:4 };
+  var state = {
+    phase: PHASE.SHOW,
+    t: 0,
+    fireflies: [],
+    targets: [],
+    picked: [],
+    bottled: [],
+    particles: [],
+    round: 0,
+    stars: 0,
+    auto: true,
+    lastInput: -99999,
+    ghostPlan: [],
+    ghostIdx: 0,
+    ghostTimer: 0,
+    ghostPoint: null,
+    flash: 0
+  };
+
+  function rand(a,b){ return a + Math.random()*(b-a); }
+
+  function makeFireflies(){
+    var n = 8 + ((Math.random()*7)|0);
+    var arr = [];
+    for(var i=0;i<n;i++){
+      arr.push({
+        id:i,
+        x: rand(90, W-160),
+        y: rand(110, H-110),
+        vx: rand(-1.2,1.2),
+        vy: rand(-1.2,1.2),
+        r: 13,
+        phase: rand(0, Math.PI*2),
+        target: false,
+        bottled: false
+      });
+    }
+    return arr;
+  }
+
+  function startRound(){
+    state.round++;
+    state.fireflies = makeFireflies();
+    state.particles = [];
+    state.bottled = [];
+    state.picked = [];
+    state.ghostPoint = null;
+    var tn = 2 + ((Math.random()*3)|0);
+    if(tn > state.fireflies.length) tn = state.fireflies.length;
+    var idxs = [];
+    for(var i=0;i<state.fireflies.length;i++) idxs.push(i);
+    for(var s=idxs.length-1;s>0;s--){ var j=(Math.random()*(s+1))|0; var tmp=idxs[s]; idxs[s]=idxs[j]; idxs[j]=tmp; }
+    state.targets = idxs.slice(0, tn);
+    for(var k=0;k<state.targets.length;k++){ state.fireflies[state.targets[k]].target = true; }
+    state.phase = PHASE.SHOW;
+    state.t = 0;
+    state.ghostPlan = [];
+    state.ghostIdx = 0;
+    state.ghostTimer = 0;
+  }
+
+  function spawnBurst(x,y,color,count){
+    for(var i=0;i<count;i++){
+      var a = rand(0,Math.PI*2), sp = rand(1.5,4.5);
+      state.particles.push({ x:x, y:y, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp, life:1, color:color, size:rand(2,4), star:(i%3===0) });
+    }
+  }
+
+  function moveFireflies(dt){
+    for(var i=0;i<state.fireflies.length;i++){
+      var f = state.fireflies[i];
+      if(f.bottled) continue;
+      f.x += f.vx*dt; f.y += f.vy*dt;
+      if(f.x < 60){ f.x=60; f.vx=Math.abs(f.vx); }
+      if(f.x > W-60){ f.x=W-60; f.vx=-Math.abs(f.vx); }
+      if(f.y < 70){ f.y=70; f.vy=Math.abs(f.vy); }
+      if(f.y > H-70){ f.y=H-70; f.vy=-Math.abs(f.vy); }
+      f.vx += rand(-0.05,0.05); f.vy += rand(-0.05,0.05);
+      var sp = Math.sqrt(f.vx*f.vx+f.vy*f.vy);
+      var mx = 2.4;
+      if(sp>mx){ f.vx=f.vx/sp*mx; f.vy=f.vy/sp*mx; }
+    }
+  }
+
+  function driftFireflies(dt){
+    for(var i=0;i<state.fireflies.length;i++){
+      var f = state.fireflies[i];
+      if(f.bottled) continue;
+      f.x += Math.sin(state.t*0.03 + f.phase)*0.25*dt;
+      f.y += Math.cos(state.t*0.025 + f.phase*1.3)*0.22*dt;
+    }
+  }
+
+  function isPicked(id){
+    for(var i=0;i<state.picked.length;i++) if(state.picked[i].id===id) return true;
+    return false;
+  }
+
+  function tryPick(id){
+    var f = state.fireflies[id];
+    if(!f || f.bottled || isPicked(id)) return;
+    var correct = f.target;
+    state.picked.push({ id:id, correct:correct });
+    if(correct){
+      f.bottled = true;
+      state.bottled.push(id);
+      spawnBurst(f.x, f.y, '#ffd24a', 16);
+      state.flash = 0.5;
+      state.stars++;
+    } else {
+      spawnBurst(f.x, f.y, '#8fb7ff', 10);
+    }
+    var correctCount = 0;
+    for(var i=0;i<state.picked.length;i++) if(state.picked[i].correct) correctCount++;
+    if(correctCount >= state.targets.length){
+      state.phase = PHASE.RESULT;
+      state.t = 0;
+    }
+  }
+
+  function updatePhase(dt){
+    state.t += dt;
+    if(state.phase === PHASE.SHOW){
+      if(state.t > 130){ state.phase = PHASE.MIX; state.t = 0; }
+    } else if(state.phase === PHASE.MIX){
+      moveFireflies(dt);
+      if(state.t > 240){
+        state.phase = PHASE.STOP; state.t = 0;
+        if(state.auto){
+          state.ghostPlan = state.targets.slice();
+          for(var s=state.ghostPlan.length-1;s>0;s--){ var j=(Math.random()*(s+1))|0; var tmp=state.ghostPlan[s]; state.ghostPlan[s]=state.ghostPlan[j]; state.ghostPlan[j]=tmp; }
+          state.ghostIdx = 0; state.ghostTimer = 0;
+        }
+      }
+    } else if(state.phase === PHASE.STOP){
+      if(state.t > 45){ state.phase = PHASE.ANSWER; state.t = 0; }
+    } else if(state.phase === PHASE.ANSWER){
+      driftFireflies(dt);
+      if(state.auto){
+        state.ghostTimer += dt;
+        if(state.ghostTimer > 40 && state.ghostIdx < state.ghostPlan.length){
+          var id = state.ghostPlan[state.ghostIdx];
+          var gf = state.fireflies[id];
+          if(gf){ state.ghostPoint = { x:gf.x, y:gf.y, life:1 }; }
+          tryPick(id);
+          state.ghostIdx++;
+          state.ghostTimer = 0;
+        }
+      }
+    } else if(state.phase === PHASE.RESULT){
+      driftFireflies(dt);
+      if(state.t > 120){ startRound(); }
+    }
+  }
+
+  function updateParticles(dt){
+    for(var i=state.particles.length-1;i>=0;i--){
+      var p = state.particles[i];
+      p.x += p.vx*dt; p.y += p.vy*dt;
+      p.vy += 0.08*dt; p.vx *= 0.98; p.vy *= 0.98;
+      p.life -= 0.02*dt;
+      if(p.life<=0) state.particles.splice(i,1);
+    }
+    if(state.flash>0) state.flash -= 0.03*dt;
+    if(state.flash<0) state.flash=0;
+    if(state.ghostPoint){ state.ghostPoint.life -= 0.02*dt; if(state.ghostPoint.life<=0) state.ghostPoint=null; }
+  }
+
+  var bg;
+  function drawBackground(){
+    if(!bg){
+      bg = ctx.createLinearGradient(0,0,0,H);
+      bg.addColorStop(0,'#0d1b3a');
+      bg.addColorStop(0.55,'#14284f');
+      bg.addColorStop(1,'#1b2340');
+    }
+    ctx.fillStyle = bg;
+    ctx.fillRect(0,0,W,H);
+    ctx.fillStyle = '#ffffff';
+    for(var i=0;i<40;i++){
+      var sx = (i*137.5)%W;
+      var sy = (i*89.3)%(H*0.6);
+      var tw = 0.3+0.7*Math.abs(Math.sin(state.t*0.02 + i));
+      ctx.globalAlpha = tw*0.55;
+      ctx.fillRect(sx, sy, 2, 2);
+    }
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#16203a';
+    ctx.beginPath();
+    ctx.moveTo(0,H);
+    ctx.lineTo(0,H-90);
+    for(var x=0;x<=W;x+=80){
+      ctx.lineTo(x, H-90 - 40*Math.abs(Math.sin(x*0.01)));
+    }
+    ctx.lineTo(W,H);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  function drawFirefly(f){
+    var glow, coreCol, ringCol;
+    var pulse = 0.5+0.5*Math.sin(state.t*0.12 + f.phase);
+    if(state.phase===PHASE.SHOW && f.target){
+      glow = 34 + pulse*14;
+      coreCol = '#fff4c2';
+      ringCol = 'rgba(255,208,74,';
+    } else {
+      var b = 0.45+0.55*(0.5+0.5*Math.sin(state.t*0.08 + f.phase));
+      glow = 16 + b*8;
+      coreCol = '#eafff0';
+      ringCol = 'rgba(150,240,180,';
+    }
+    var g = ctx.createRadialGradient(f.x,f.y,1,f.x,f.y,glow);
+    g.addColorStop(0, ringCol+'0.85)');
+    g.addColorStop(0.4, ringCol+'0.35)');
+    g.addColorStop(1, ringCol+'0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(f.x,f.y,glow,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle = coreCol;
+    ctx.beginPath(); ctx.arc(f.x,f.y,f.r*0.42,0,Math.PI*2); ctx.fill();
+  }
+
+  function roundRect(x,y,w,h,r){
+    ctx.beginPath();
+    ctx.moveTo(x+r,y);
+    ctx.arcTo(x+w,y,x+w,y+h,r);
+    ctx.arcTo(x+w,y+h,x,y+h,r);
+    ctx.arcTo(x,y+h,x,y,r);
+    ctx.arcTo(x,y,x+w,y,r);
+    ctx.closePath();
+  }
+
+  function drawBottle(){
+    var bw=120, bh=150, bx=W-bw-24, by=H-bh-24;
+    ctx.fillStyle='rgba(180,220,255,0.10)';
+    roundRect(bx,by,bw,bh,16); ctx.fill();
+    ctx.strokeStyle='rgba(200,230,255,0.55)'; ctx.lineWidth=3;
+    roundRect(bx,by,bw,bh,16); ctx.stroke();
+    ctx.fillStyle='rgba(150,110,70,0.9)';
+    roundRect(bx+bw/2-24, by-16, 48, 20, 6); ctx.fill();
+    var cnt = state.bottled.length;
+    for(var i=0;i<cnt;i++){
+      var fx = bx+30 + (i%3)*32 + Math.sin(state.t*0.06+i)*4;
+      var fy = by+bh-34 - ((i/3)|0)*30 + Math.cos(state.t*0.05+i)*4;
+      var g=ctx.createRadialGradient(fx,fy,1,fx,fy,22);
+      g.addColorStop(0,'rgba(255,220,90,0.95)');
+      g.addColorStop(1,'rgba(255,220,90,0)');
+      ctx.fillStyle=g; ctx.beginPath(); ctx.arc(fx,fy,22,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle='#fff4c2'; ctx.beginPath(); ctx.arc(fx,fy,5,0,Math.PI*2); ctx.fill();
+    }
+  }
+
+  function drawStar(x,y,r,col){
+    ctx.fillStyle=col; ctx.beginPath();
+    for(var i=0;i<5;i++){
+      var a=-Math.PI/2 + i*Math.PI*2/5;
+      var a2=a+Math.PI/5;
+      ctx.lineTo(x+Math.cos(a)*r, y+Math.sin(a)*r);
+      ctx.lineTo(x+Math.cos(a2)*r*0.45, y+Math.sin(a2)*r*0.45);
+    }
+    ctx.closePath(); ctx.fill();
+  }
+
+  function drawParticles(){
+    for(var i=0;i<state.particles.length;i++){
+      var p=state.particles[i];
+      ctx.globalAlpha=Math.max(0,p.life);
+      if(p.star){ drawStar(p.x,p.y,p.size*1.6,p.color); }
+      else { ctx.fillStyle=p.color; ctx.beginPath(); ctx.arc(p.x,p.y,p.size,0,Math.PI*2); ctx.fill(); }
+    }
+    ctx.globalAlpha=1;
+  }
+
+  function drawBanner(txt, sub){
+    ctx.save();
+    ctx.textAlign='center';
+    ctx.font='700 40px system-ui, sans-serif';
+    ctx.fillStyle='rgba(0,0,0,0.35)';
+    ctx.fillText(txt, W/2+2, 62);
+    ctx.fillStyle='#fff4c2';
+    ctx.fillText(txt, W/2, 60);
+    if(sub){
+      ctx.font='600 22px system-ui, sans-serif';
+      ctx.fillStyle='rgba(230,240,255,0.88)';
+      ctx.fillText(sub, W/2, 96);
+    }
+    ctx.restore();
+  }
+
+  function draw(){
+    drawBackground();
+    if(state.flash>0){ ctx.fillStyle='rgba(255,240,180,'+(state.flash*0.25)+')'; ctx.fillRect(0,0,W,H); }
+    drawBottle();
+    for(var i=0;i<state.fireflies.length;i++){
+      if(!state.fireflies[i].bottled) drawFirefly(state.fireflies[i]);
+    }
+    for(var p=0;p<state.picked.length;p++){
+      var pk=state.picked[p];
+      var f=state.fireflies[pk.id];
+      if(!f || f.bottled) continue;
+      ctx.strokeStyle = pk.correct? '#ffd24a':'#ff8f8f';
+      ctx.lineWidth=3;
+      ctx.beginPath(); ctx.arc(f.x,f.y,f.r+10,0,Math.PI*2); ctx.stroke();
+      if(!pk.correct){
+        ctx.beginPath(); ctx.moveTo(f.x-8,f.y-8); ctx.lineTo(f.x+8,f.y+8);
+        ctx.moveTo(f.x+8,f.y-8); ctx.lineTo(f.x-8,f.y+8); ctx.stroke();
+      }
+    }
+    if(state.ghostPoint){
+      ctx.globalAlpha=state.ghostPoint.life;
+      ctx.strokeStyle='#ffffff'; ctx.lineWidth=3;
+      var rr=18*(1.4-state.ghostPoint.life)+8;
+      ctx.beginPath(); ctx.arc(state.ghostPoint.x,state.ghostPoint.y,rr,0,Math.PI*2); ctx.stroke();
+      ctx.globalAlpha=1;
+    }
+    drawParticles();
+
+    if(state.phase===PHASE.SHOW) drawBanner('おぼえて！', 'きいろく光るのがまもりホタル');
+    else if(state.phase===PHASE.MIX) drawBanner('目でおって！', 'みんな同じ色になったよ');
+    else if(state.phase===PHASE.STOP) drawBanner('ストップ！', '');
+    else if(state.phase===PHASE.ANSWER) drawBanner('どれだった？', 'まもりホタルをタップ ('+state.bottled.length+'/'+state.targets.length+')');
+    else if(state.phase===PHASE.RESULT) drawBanner('だいせいこう！', 'ぜんぶ瓶に入れたよ');
+
+    ctx.textAlign='left';
+    drawStar(30, H-30, 12, '#ffd24a');
+    ctx.font='700 24px system-ui, sans-serif';
+    ctx.fillStyle='#fff4c2';
+    ctx.fillText('x '+state.stars, 48, H-22);
+
+    if(state.auto){
+      ctx.textAlign='right';
+      ctx.font='600 18px system-ui, sans-serif';
+      ctx.fillStyle='rgba(255,255,255,0.6)';
+      ctx.fillText('じどうデモ中', W-160, 34);
+    }
+  }
+
+  var last = performance.now();
+  function loop(now){
+    var dt = (now-last)/16.67;
+    last = now;
+    if(dt>3) dt=3;
+    if(state.auto === false && (now - state.lastInput) > 5000){ state.auto = true; }
+    updatePhase(dt);
+    updateParticles(dt);
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  function onDown(ev){
+    if(state.phase !== PHASE.ANSWER){
+      if(!state.auto){ state.lastInput = performance.now(); }
+      return;
+    }
+    state.auto = false;
+    state.lastInput = performance.now();
+    var rect = canvas.getBoundingClientRect();
+    var cx = (ev.clientX - rect.left) * (W/rect.width);
+    var cy = (ev.clientY - rect.top) * (H/rect.height);
+    var best=-1, bestD=1e9;
+    for(var i=0;i<state.fireflies.length;i++){
+      var f=state.fireflies[i];
+      if(f.bottled) continue;
+      var dx=f.x-cx, dy=f.y-cy, d=dx*dx+dy*dy;
+      if(d<bestD){ bestD=d; best=i; }
+    }
+    if(best>=0 && bestD < 60*60){ tryPick(best); }
+  }
+
+  canvas.addEventListener('pointerdown', onDown);
+
+  startRound();
+  requestAnimationFrame(loop);
+})();
+</script>
+</div>
+</body>
+</html>

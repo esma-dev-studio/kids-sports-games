@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "signal-hero",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--", "--host", "127.0.0.1", "--port", "5177", "--strictPort"],
+      "cwd": "C:/Users/2016k/Caoude作業フォルダ/90_Private/アプリ開発④_ゲーム",
+      "port": 5177
+    }
+  ]
+}

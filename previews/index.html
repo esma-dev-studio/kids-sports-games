@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>子ども向けスポーツ認知ゲーム — 6案プレビュー</title>
+<style>
+:root{
+  --surface-0:#f4f3ee; --surface-1:#fcfcfb; --surface-2:#ffffff;
+  --text-primary:#0b0b0b; --text-secondary:#52514e; --text-muted:#898781;
+  --text-accent:#185fa5; --bg-accent:#e6f1fb;
+  --border:rgba(11,11,11,0.10); --border-strong:rgba(11,11,11,0.18);
+  --border-accent:#378add; --radius:8px;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --surface-0:#1a1a19; --surface-1:#232322; --surface-2:#2b2b29;
+    --text-primary:#ffffff; --text-secondary:#c3c2b7; --text-muted:#8f8e88;
+    --text-accent:#85b7eb; --bg-accent:#0c447c;
+    --border:rgba(255,255,255,0.12); --border-strong:rgba(255,255,255,0.22);
+    --border-accent:#3a86dd;
+  }
+}
+html,body{margin:0;background:var(--surface-0);color:var(--text-primary);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;line-height:1.7;}
+.page{max-width:760px;margin:0 auto;padding:28px 18px 56px;box-sizing:border-box;}
+h1{font-size:24px;font-weight:500;margin:0 0 6px;}
+.lead{font-size:15px;color:var(--text-secondary);margin:0 0 6px;}
+.note{font-size:13px;color:var(--text-muted);margin:0 0 28px;}
+.game{margin:0 0 40px;}
+.ghead{display:flex;align-items:center;gap:10px;margin:0 0 6px;}
+.rank{width:26px;height:26px;flex:none;display:flex;align-items:center;justify-content:center;border-radius:50%;background:var(--bg-accent);color:var(--text-accent);font-size:14px;font-weight:500;}
+.ghead h2{font-size:19px;font-weight:500;margin:0;}
+.badge{font-size:12px;color:var(--text-secondary);background:var(--surface-1);border:0.5px solid var(--border);border-radius:999px;padding:2px 10px;}
+.cap{font-size:14px;color:var(--text-secondary);margin:0 0 3px;}
+.ctl{font-size:12px;color:var(--text-muted);margin:0 0 12px;}
+.ctl i{font-style:normal;color:var(--text-secondary);}
+.frame{width:100%;height:580px;border:0.5px solid var(--border);border-radius:12px;background:var(--surface-1);}
+.open{margin:8px 0 0;font-size:13px;}
+.open a{color:var(--text-accent);text-decoration:none;}
+footer{margin-top:20px;padding-top:20px;border-top:0.5px solid var(--border);font-size:13px;color:var(--text-muted);}
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>子ども向けスポーツ認知ゲーム — 6案プレビュー</h1>
+  <p class="lead">反射・全体把握・空間認識・周辺視野などを鍛え、バスケ／サッカーへ間接的に転移することを狙った6案の動くプレビュー。</p>
+  <p class="note">各デモは放置すると"お手本"が自動で回り、クリック／タップで自分でも操作できます。順位は発達心理・スポーツ科学・ゲーム開発の3専門家による採点結果。</p>
+  <section class="game">
+    <div class="ghead">
+      <span class="rank">1</span>
+      <h2>まもれ！シグナル・ヒーロー</h2>
+      <span class="badge">反射・抑制</span>
+    </div>
+    <p class="cap">円形リング上に次々と光るノードを、味方の丸(青緑)だけタップし、敵のバツ(赤)は触らず見送る反応系ミニゲームのプレビューです。</p>
+    <p class="ctl"><i>操作:</i> クリック/タップで光ったノードを叩く。丸(○)=味方は叩く、バツ(×)=敵は触らず待つ。放置するとお手本デモが自動で回ります。</p>
+    <iframe class="frame" src="signal.html" title="まもれ！シグナル・ヒーロー のプレビュー" loading="lazy"></iframe>
+    <p class="open"><a href="signal.html" target="_blank" rel="noopener">単体で開く ↗</a></p>
+  </section>
+  <section class="game">
+    <div class="ghead">
+      <span class="rank">2</span>
+      <h2>パスハンター 〜まわりを見ろ！〜</h2>
+      <span class="badge">複数追跡・周辺視</span>
+    </div>
+    <p class="cap">光ってマークされた味方を、跳ね回る丸の中から見失わずに追い、PASS!の合図でその味方をクリックしてパスを通す観察系ゲームです。</p>
+    <p class="ctl"><i>操作:</i> 合図「PASS!」が出たら、覚えておいた味方（青い丸）をクリック/タップ。放置すると自動でお手本デモが動きます。</p>
+    <iframe class="frame" src="passhunter.html" title="パスハンター 〜まわりを見ろ！〜 のプレビュー" loading="lazy"></iframe>
+    <p class="open"><a href="passhunter.html" target="_blank" rel="noopener">単体で開く ↗</a></p>
+  </section>
+  <section class="game">
+    <div class="ghead">
+      <span class="rank">3</span>
+      <h2>パスライン！コートの目</h2>
+      <span class="badge">空間認識・判断</span>
+    </div>
+    <p class="cap">俯瞰コートで保持者から味方へのパスラインの安全度（緑=通る/黄=注意/赤=危険）を読み、緑の味方を選んでファストブレイクを連鎖させる自動デモ付きミニゲーム。</p>
+    <p class="ctl"><i>操作:</i> 緑または黄色に光る味方の丸をクリック/タップでパス。放置すると自動でお手本プレイが動きます。</p>
+    <iframe class="frame" src="courteyes.html" title="パスライン！コートの目 のプレビュー" loading="lazy"></iframe>
+    <p class="open"><a href="courteyes.html" target="_blank" rel="noopener">単体で開く ↗</a></p>
+  </section>
+  <section class="game">
+    <div class="ghead">
+      <span class="rank">4</span>
+      <h2>パニックキッチン 〜まぜまぜ大混雑〜</h2>
+      <span class="badge">楽しさ最高</span>
+    </div>
+    <p class="cap">縁から飛来する目付きの食材キャラを、色と種類が合うお皿へドラッグして仕分けるドタバタ仕分けゲームのミニプレビューです。</p>
+    <p class="ctl"><i>操作:</i> 食材をクリック/タップで掴んだままドラッグし、色の合うお皿の上で離す。放置すると紫の「お手本デモ」が自動で正しく仕分けます。</p>
+    <iframe class="frame" src="kitchen.html" title="パニックキッチン 〜まぜまぜ大混雑〜 のプレビュー" loading="lazy"></iframe>
+    <p class="open"><a href="kitchen.html" target="_blank" rel="noopener">単体で開く ↗</a></p>
+  </section>
+  <section class="game">
+    <div class="ghead">
+      <span class="rank">5</span>
+      <h2>ホタルレスキュー 〜きらめきをまもれ〜</h2>
+      <span class="badge">複数物体追跡</span>
+    </div>
+    <p class="cap">黄色く光る「まもりホタル」を覚えて、入り混じって動いたあとにどれだったか当てて瓶に集める記憶ゲームです。</p>
+    <p class="ctl"><i>操作:</i> クリック／タップでホタルを選ぶ（放置すると自動でお手本プレイが流れます）</p>
+    <iframe class="frame" src="firefly.html" title="ホタルレスキュー 〜きらめきをまもれ〜 のプレビュー" loading="lazy"></iframe>
+    <p class="open"><a href="firefly.html" target="_blank" rel="noopener">単体で開く ↗</a></p>
+  </section>
+  <section class="game">
+    <div class="ghead">
+      <span class="rank">6</span>
+      <h2>グルグル・ミテミテ！</h2>
+      <span class="badge">周辺視・スキャン</span>
+    </div>
+    <p class="cap">中央のフォーカス円でボールをドリブルして相手の足をよけながら、外周でピカッと光る味方の方向へフリックでパスを返す、中心視と周辺視の"デュアルタスク"体験のミニプレビューです。</p>
+    <p class="ctl"><i>操作:</i> 円の中をクリック/ドラッグでボールを左右に動かして相手をよける。外周の光った味方へ、中央から外へフリック（ドラッグして離す）でパス。放置すると自動デモが再生されます。</p>
+    <iframe class="frame" src="scan.html" title="グルグル・ミテミテ！ のプレビュー" loading="lazy"></iframe>
+    <p class="open"><a href="scan.html" target="_blank" rel="noopener">単体で開く ↗</a></p>
+  </section>
+  <footer>詳しい評価と推奨案は <code>../docs/01_ゲーム案の評価結果.md</code>、開発体制は <code>../docs/02_サブエージェント体制.md</code> を参照。</footer>
+</div>
+</body>
+</html>
