@@ -2,6 +2,14 @@
 
 子どもが楽しく遊べて、遊ぶうちに **反射神経・全体把握・空間認識・周辺視野・意思決定** などの知覚-認知能力が鍛えられ、バスケットボール／サッカーの能力に **間接的に** 転移することを狙ったWebゲームの企画フォルダ。
 
+## 公開サイト（GitHub Pages）
+
+- ハブ: https://esma-dev-studio.github.io/kids-sports-games/
+- まもれ！シグナル・ヒーロー: https://esma-dev-studio.github.io/kids-sports-games/signal-hero/
+- パニックキッチン: https://esma-dev-studio.github.io/kids-sports-games/panic-kitchen/
+
+リポジトリ: https://github.com/esma-dev-studio/kids-sports-games （main=ソース、gh-pages=公開ビルド）
+
 ## ゲームアプリ（実装済み）
 
 各ゲームは独立した Vite + React + TypeScript + Canvas アプリ。開発サーバは各フォルダで `npm install`（初回のみ）→ `npm run dev`、公開ビルドは `npm run build`。
@@ -26,6 +34,20 @@
 ## プレビューの見かた
 
 `previews/index.html` をダブルクリックしてブラウザで開くと、6案を一覧できます。各デモは放置すると"お手本"が自動で回り、クリック/タップで自分でも操作できます。
+
+## 再デプロイ手順（GitHub Pages 更新）
+
+1. 各ゲームをビルド
+   - `npm run build`（シグナル・ヒーロー → `dist/`）
+   - `cd panic-kitchen && npm run build`（→ `panic-kitchen/dist/`）
+2. サイトを組み立て: `node scripts/build-site.mjs` → `_site/`（ハブ＋`signal-hero/`＋`panic-kitchen/`）を生成
+3. `gh-pages` ブランチへ公開（`_site/` の中身を force push）
+   ```sh
+   cd _site
+   git init -b gh-pages && git add -A && git commit -m "Deploy"
+   git push -f https://github.com/esma-dev-studio/kids-sports-games.git gh-pages
+   ```
+   反映まで数十秒。ソース(main)の更新は通常の `git push origin main`。
 
 ## 技術前提
 
