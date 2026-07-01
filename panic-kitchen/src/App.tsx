@@ -3,9 +3,9 @@ import { GameCanvas } from './components/GameCanvas'
 import { MODE_LABEL } from './game/config'
 import type { Mode, RoundResult } from './game/types'
 import { unlock } from './game/audio'
-import { load, save, type SaveData } from './game/storage'
+import { addScore, load, qualifies, RANK_MAX, save, type SaveData, type ScoreEntry } from './game/storage'
 
-type Screen = 'menu' | 'tutorial' | 'playing' | 'result'
+type Screen = 'menu' | 'tutorial' | 'playing' | 'result' | 'ranking'
 const MODES: Mode[] = ['easy', 'normal']
 
 function Stars({ n }: { n: number }) {
@@ -18,11 +18,31 @@ function Stars({ n }: { n: number }) {
   )
 }
 
+function RankTable({ scores, highlight }: { scores: ScoreEntry[]; highlight?: number }) {
+  if (scores.length === 0) {
+    return <p className="rank-empty">まだ記録がありません。1ゲームあそぶと登録できます。</p>
+  }
+  return (
+    <ol className="rank-list">
+      {scores.map((s, i) => (
+        <li key={i} className={i === highlight ? 'rank-row me' : 'rank-row'}>
+          <span className="rank-no">{i + 1}</span>
+          <span className="rank-name">{s.name}</span>
+          <span className="rank-score">{s.score}</span>
+        </li>
+      ))}
+    </ol>
+  )
+}
+
 export default function App() {
   const [data, setData] = useState<SaveData>(() => load())
   const [screen, setScreen] = useState<Screen>('menu')
   const [result, setResult] = useState<RoundResult | null>(null)
   const [playKey, setPlayKey] = useState(0)
+  const [nameInput, setNameInput] = useState('')
+  const [newRank, setNewRank] = useState<number | null>(null)
+  const [registered, setRegistered] = useState(false)
 
   const persist = useCallback((patch: Partial<SaveData>) => {
     setData((prev) => {
@@ -50,13 +70,26 @@ export default function App() {
   }, [persist, beginPlay])
 
   const onEnd = useCallback((r: RoundResult) => {
+    const fresh = load()
     setResult(r)
-    setData(load())
+    setData(fresh)
+    setNameInput(fresh.lastName || 'プレイヤー')
+    setNewRank(null)
+    setRegistered(false)
     setScreen('result')
   }, [])
 
-  const showBackdrop = screen === 'menu' || screen === 'tutorial' || screen === 'result'
+  const onRegister = useCallback(() => {
+    if (!result) return
+    const { data: next, rank } = addScore(data, nameInput, result.score)
+    setData(next)
+    setNewRank(rank)
+    setRegistered(true)
+  }, [result, data, nameInput])
+
+  const showBackdrop = screen === 'menu' || screen === 'tutorial' || screen === 'result' || screen === 'ranking'
   const best = data.best
+  const canRegister = !!result && !registered && qualifies(data.scores, result.score)
 
   return (
     <div className="app">
@@ -92,6 +125,7 @@ export default function App() {
                 ))}
               </div>
               <button className="cta" onClick={onStart}>はじめる</button>
+              <button className="rank-link" onClick={() => setScreen('ranking')}>ランキングを見る</button>
               <div className="best">
                 自己ベスト｜スコア <b>{best.score}</b>　できあがり <b>{best.plates}</b>　コンボ <b>{best.combo}</b>
               </div>
@@ -141,11 +175,40 @@ export default function App() {
                   <span className="metric-sub">できあがり {result.platesDone} 皿</span>
                 </div>
               </div>
-              <p className="panel-sub">最大コンボ {result.maxCombo}</p>
+
+              <div className="rank-block">
+                {canRegister && (
+                  <div className="rank-entry">
+                    <p className="rank-in">ランクイン！ なまえを入れて登録しよう</p>
+                    <div className="rank-form">
+                      <input
+                        className="name-input"
+                        value={nameInput}
+                        maxLength={8}
+                        onChange={(e) => setNameInput(e.target.value)}
+                        aria-label="なまえ"
+                      />
+                      <button className="ghost-btn" onClick={onRegister}>登録</button>
+                    </div>
+                  </div>
+                )}
+                <RankTable scores={data.scores} highlight={registered ? newRank ?? undefined : undefined} />
+              </div>
+
               <div className="btn-row">
                 <button className="cta" onClick={beginPlay}>もう1回</button>
                 <button className="ghost-btn" onClick={() => setScreen('menu')}>メニュー</button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {screen === 'ranking' && (
+          <div className="overlay">
+            <div className="panel">
+              <h2 className="panel-title">ランキング TOP{RANK_MAX}</h2>
+              <RankTable scores={data.scores} />
+              <button className="cta" onClick={() => setScreen('menu')}>とじる</button>
             </div>
           </div>
         )}

@@ -193,6 +193,58 @@ html, body {
   line-height: 1.6;
 }
 
+.rank-link {
+  display: inline-block;
+  margin: 10px auto 0;
+  padding: 6px 4px;
+  border: none;
+  background: none;
+  color: var(--go-dark);
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.rank-block { margin: 14px 0 4px; }
+.rank-entry {
+  background: rgba(31, 168, 138, 0.10);
+  border-radius: 12px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+.rank-in { margin: 0 0 8px; font-size: 13px; font-weight: 700; color: var(--go-dark); }
+.rank-form { display: flex; gap: 8px; }
+.name-input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 2px solid var(--line);
+  border-radius: 12px;
+  font-size: 16px;
+  font-family: inherit;
+  color: var(--ink);
+  background: #fff;
+}
+.name-input:focus { outline: none; border-color: var(--go); }
+.rank-form .ghost-btn { padding: 10px 18px; }
+
+.rank-list { list-style: none; margin: 0; padding: 0; }
+.rank-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  font-size: 15px;
+}
+.rank-row:nth-child(odd) { background: rgba(15, 47, 40, 0.04); }
+.rank-row.me { background: rgba(234, 167, 32, 0.22); font-weight: 700; }
+.rank-no { width: 22px; text-align: center; font-weight: 700; color: var(--ink-soft); }
+.rank-name { flex: 1; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rank-score { font-variant-numeric: tabular-nums; font-weight: 700; }
+.rank-empty { font-size: 13px; color: var(--ink-soft); margin: 8px 0; }
+
 @media (max-width: 480px) {
   .score-row { flex-direction: column; }
   .mode { max-width: none; }
