@@ -211,9 +211,9 @@ html, body {
 }
 .rank-row:nth-child(odd) { background: rgba(74, 49, 21, 0.05); }
 .rank-row.me { background: rgba(234, 167, 32, 0.24); font-weight: 700; }
-.rank-no { width: 22px; text-align: center; font-weight: 700; color: var(--ink-soft); }
+.rank-no { min-width: 36px; text-align: left; font-weight: 700; color: var(--ink-soft); }
 .rank-name { flex: 1; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rank-score { font-variant-numeric: tabular-nums; font-weight: 700; }
+.rank-score { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: 800; font-size: 17px; }
 .rank-empty { font-size: 13px; color: var(--ink-soft); margin: 8px 0; }
 
 .sub-links { display: flex; gap: 14px; justify-content: center; margin-top: 10px; }

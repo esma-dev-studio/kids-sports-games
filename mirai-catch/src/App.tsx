@@ -48,12 +48,12 @@ function Confetti() {
 }
 
 function RankTable({ scores, highlight }: { scores: ScoreEntry[]; highlight?: number }) {
-  if (scores.length === 0) return <p className="rank-empty">まだ記録がありません。1ゲームあそぶと登録できます。</p>
+  if (scores.length === 0) return <p className="rank-empty">まだ記録がありません。1ゲームあそぶと自動でのります。</p>
   return (
     <ol className="rank-list">
       {scores.map((s, i) => (
         <li key={i} className={i === highlight ? 'rank-row me' : 'rank-row'}>
-          <span className="rank-no">{i + 1}</span><span className="rank-name">{s.name}</span><span className="rank-score">{s.score}</span>
+          <span className="rank-no">{i + 1}位</span><span className="rank-score">{s.score}</span>
         </li>
       ))}
     </ol>
@@ -101,9 +101,7 @@ export default function App() {
   const [screen, setScreen] = useState<Screen>('menu')
   const [result, setResult] = useState<RoundResult | null>(null)
   const [playKey, setPlayKey] = useState(0)
-  const [nameInput, setNameInput] = useState('')
   const [newRank, setNewRank] = useState<number | null>(null)
-  const [registered, setRegistered] = useState(false)
   const [newBadges, setNewBadges] = useState<Badge[]>([])
 
   const persist = useCallback((patch: Partial<SaveData>) => {
@@ -119,27 +117,25 @@ export default function App() {
     const stats = accumulate(prev.stats, r)
     const earned = earnedIds(stats)
     const newly = earned.filter((id) => !prev.badges.includes(id))
-    const next: SaveData = { ...prev, stats, badges: earned }
-    save(next)
+    let next: SaveData = { ...prev, stats, badges: earned }
+    let rank = -1
+    if (qualifies(prev.scores, r.score)) {
+      const res = addScore(next, prev.lastName || 'あなた', r.score)
+      next = res.data
+      rank = res.rank
+    } else {
+      save(next)
+    }
     setData(next)
     setResult(r)
-    setNameInput(next.lastName || 'プレイヤー')
-    setNewRank(null)
-    setRegistered(false)
+    setNewRank(rank >= 0 ? rank : null)
     setNewBadges(BADGES.filter((b) => newly.includes(b.id)))
     if ((r.isBestScore || newly.length > 0) && prev.sound) playFanfare()
     setScreen('result')
   }, [])
 
-  const onRegister = useCallback(() => {
-    if (!result) return
-    const { data: next, rank } = addScore(data, nameInput, result.score)
-    setData(next); setNewRank(rank); setRegistered(true)
-  }, [result, data, nameInput])
-
   const showBackdrop = screen === 'menu' || screen === 'tutorial' || screen === 'result' || screen === 'ranking'
   const best = data.best
-  const canRegister = !!result && !registered && qualifies(data.scores, result.score)
   const earnedSet = useMemo(() => new Set(data.badges), [data.badges])
   const teaser = useMemo(() => nextBadges(data.stats, earnedSet, 3), [data.stats, earnedSet])
 
@@ -238,16 +234,8 @@ export default function App() {
               )}
 
               <div className="rank-block">
-                {canRegister && (
-                  <div className="rank-entry">
-                    <p className="rank-in">ランクイン！ なまえを入れて登録しよう</p>
-                    <div className="rank-form">
-                      <input className="name-input" value={nameInput} maxLength={8} onChange={(e) => setNameInput(e.target.value)} aria-label="なまえ" />
-                      <button className="ghost-btn" onClick={onRegister}>登録</button>
-                    </div>
-                  </div>
-                )}
-                <RankTable scores={data.scores} highlight={registered ? newRank ?? undefined : undefined} />
+                {newRank !== null && <p className="rank-in">ランキング {newRank + 1}位に のったよ！🎉</p>}
+                <RankTable scores={data.scores} highlight={newRank ?? undefined} />
               </div>
 
               <div className="btn-row">
