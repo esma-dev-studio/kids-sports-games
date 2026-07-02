@@ -7,6 +7,7 @@
 - ハブ: https://esma-dev-studio.github.io/kids-sports-games/
 - まもれ！シグナル・ヒーロー: https://esma-dev-studio.github.io/kids-sports-games/signal-hero/
 - パニックキッチン: https://esma-dev-studio.github.io/kids-sports-games/panic-kitchen/
+- みらいキャッチ 〜さきよみディフェンス〜: https://esma-dev-studio.github.io/kids-sports-games/mirai-catch/
 
 リポジトリ: https://github.com/esma-dev-studio/kids-sports-games （main=ソース、gh-pages=公開ビルド）
 
@@ -18,6 +19,7 @@
 |---|---|---|
 | `signal-hero/`（※現在はリポジトリ直下） | **まもれ！シグナル・ヒーロー** | 味方○を叩き、敵×のニセ光は我慢する反射×抑制のGo/No-Go。我慢するほど伸びる「見きわめボーナス」が核 |
 | `panic-kitchen/` | **パニックキッチン 〜まぜまぜ大混雑〜** | 飛んでくる食材を色＋アイコンの合うお皿へドラッグ。周辺視野・全体把握・状況判断を鍛える仕分けアクション |
+| `mirai-catch/` | **みらいキャッチ 〜さきよみディフェンス〜** | 飛んでくる球の“未来の通り道”を先読みし、着く前に先回りキャッチ（GK型）。予測・空間認識を鍛える |
 
 > 補足: シグナル・ヒーローは現状このフォルダ直下（`package.json`/`src/`）に置いています。パニックキッチンは `panic-kitchen/` サブフォルダの独立アプリです。両ゲームとも やさしい/ふつうモード・二軸★リザルト・自己ベスト保存・演出ひかえめ・お手本デモを備えます。
 
