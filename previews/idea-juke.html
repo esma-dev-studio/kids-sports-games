@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ジューク・ダッシュ 〜すりぬけ名人〜 — プレビュー</title><style>:root{--surface-0:#f4f3ee;--surface-1:#fcfcfb;--surface-2:#fff;--text-primary:#0b0b0b;--text-secondary:#52514e;--text-muted:#898781;--text-accent:#185fa5;--border:rgba(11,11,11,.10);--radius:8px}@media(prefers-color-scheme:dark){:root{--surface-0:#1a1a19;--surface-1:#232322;--surface-2:#2b2b29;--text-primary:#fff;--text-secondary:#c3c2b7;--text-muted:#8f8e88;--text-accent:#85b7eb;--border:rgba(255,255,255,.12)}}
+html,body{margin:0;background:var(--surface-0);color:var(--text-primary);font-family:system-ui,-apple-system,"Segoe UI",sans-serif}.page{max-width:740px;margin:0 auto;padding:18px 16px 40px;box-sizing:border-box}</style></head><body><div class="page">
+<h2 class="juke-sr-only">オニに追われながら星を拾い、急な切り返し(ジューク)で予測を外してゴールの輪まで運ぶ、子ども向けの追いかけっこ回避ゲームのミニプレビュー。放置すると自動でお手本プレイが再生されます。</h2>
+<style>
+.juke-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;}
+.juke-frame{background:var(--surface-1,#f4f5f7);border-radius:12px;padding:12px;max-width:100%;box-sizing:border-box;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;}
+.juke-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin:0 2px 8px;flex-wrap:wrap;}
+.juke-title{font-size:15px;font-weight:700;color:var(--text-primary,#1a1a1a);letter-spacing:.02em;}
+.juke-title .juke-emoji{margin-right:4px;}
+.juke-hint{font-size:12px;color:var(--text-secondary,#555);}
+.juke-hint b{color:var(--text-primary,#1a1a1a);font-weight:600;}
+.juke-status{font-size:11px;color:var(--text-muted,#8a8a8a);margin:6px 2px 0;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;}
+.juke-canvas{display:block;width:100%;height:auto;border-radius:8px;cursor:crosshair;touch-action:none;}
+</style>
+<div class="juke-frame">
+  <div class="juke-head">
+    <div class="juke-title"><span class="juke-emoji">🏃</span>ジューク・ダッシュ 〜すりぬけ名人〜</div>
+    <div class="juke-hint">ドラッグで<b>まる</b>を動かす／⭐を集めて<b>ゴールの輪</b>へ・急な切り返しで<b>オニ</b>をかわそう</div>
+  </div>
+  <canvas id="juke-canvas" class="juke-canvas" width="1040" height="620"></canvas>
+  <div class="juke-status">
+    <span id="juke-mode">お手本デモ再生中…（画面をなぞると操作できます）</span>
+    <span id="juke-score">スコア 0</span>
+  </div>
+</div>
+<script>
+(function(){
+  var canvas=document.getElementById("juke-canvas");
+  if(!canvas||!canvas.getContext)return;
+  var ctx=canvas.getContext("2d");
+  if(!ctx)return;
+  var W=1040,H=620;
+  var modeEl=document.getElementById("juke-mode");
+  var scoreEl=document.getElementById("juke-score");
+
+  var COL_BG1="#101a2e",COL_BG2="#182541";
+  var COL_FIELD="#1e2d4f";
+  var COL_PLAYER="#3fbaf5",COL_PLAYER_D="#1c7fc0";
+  var COL_ONI="#ff6b6b",COL_ONI_D="#c93b3b";
+  var COL_STAR="#ffd54a",COL_GOAL="#7ef0c4";
+
+  var player={x:W*0.28,y:H*0.5,r:17,vx:0,vy:0,px:W*0.28,py:H*0.5};
+  var oni={x:W*0.72,y:H*0.5,r:20,vx:0,vy:0,stun:0};
+  var goal={x:W*0.5,y:H*0.5,r:44,pulse:0};
+  var stars=[];
+  var particles=[];
+  var score=0;
+  var flash=0;
+  var jukeFlash=0;
+
+  var target={x:player.x,y:player.y};
+  var humanControl=false;
+  var lastHuman=-99999;
+  var t=0;
+
+  var demo={wp:null,phase:"star",timer:0,jitter:0,jt:0,dodgeDir:1};
+
+  function rand(a,b){return a+Math.random()*(b-a);}
+
+  function spawnStars(){
+    stars=[];
+    var pad=90;
+    var n=3;
+    for(var i=0;i<n;i++){
+      var sx,sy,ok,tries=0;
+      do{
+        sx=rand(pad,W-pad);sy=rand(pad,H-pad);
+        ok=true;
+        var dg=Math.hypot(sx-goal.x,sy-goal.y);
+        if(dg<120)ok=false;
+        for(var j=0;j<stars.length;j++){
+          if(Math.hypot(sx-stars[j].x,sy-stars[j].y)<160)ok=false;
+        }
+        tries++;
+      }while(!ok&&tries<40);
+      stars.push({x:sx,y:sy,got:false,spin:rand(0,6.28),bob:rand(0,6.28)});
+    }
+  }
+
+  function resetRound(soft){
+    player.x=W*0.28;player.y=H*0.5;player.vx=0;player.vy=0;
+    player.px=player.x;player.py=player.y;
+    oni.x=W*0.72;oni.y=H*0.5;oni.vx=0;oni.vy=0;oni.stun=0;
+    target.x=player.x;target.y=player.y;
+    if(!soft){score=0;}
+    spawnStars();
+    demo.phase="star";demo.wp=null;demo.timer=0;demo.jt=0;
+  }
+
+  function addParticles(x,y,color,n,spd){
+    for(var i=0;i<n;i++){
+      var a=rand(0,6.28),s=rand(spd*0.3,spd);
+      particles.push({x:x,y:y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:1,color:color,r:rand(2,5)});
+    }
+  }
+
+  function nearestStar(fx,fy){
+    var best=null,bd=1e9;
+    for(var i=0;i<stars.length;i++){
+      if(stars[i].got)continue;
+      var d=Math.hypot(stars[i].x-fx,stars[i].y-fy);
+      if(d<bd){bd=d;best=stars[i];}
+    }
+    return best;
+  }
+
+  function allStarsGot(){
+    for(var i=0;i<stars.length;i++){if(!stars[i].got)return false;}
+    return true;
+  }
+
+  function updateDemo(dt){
+    demo.timer+=dt;
+    demo.jt-=dt;
+    var goalX,goalY;
+    if(allStarsGot()){goalX=goal.x;goalY=goal.y;}
+    else{
+      var s=nearestStar(player.x,player.y);
+      if(s){goalX=s.x;goalY=s.y;}else{goalX=goal.x;goalY=goal.y;}
+    }
+    var dirx=goalX-player.x,diry=goalY-player.y;
+    var dlen=Math.hypot(dirx,diry)||1;
+    dirx/=dlen;diry/=dlen;
+
+    var odx=player.x-oni.x,ody=player.y-oni.y;
+    var odist=Math.hypot(odx,ody)||1;
+    var away_x=odx/odist,away_y=ody/odist;
+
+    var danger=Math.max(0,1-(odist-140)/260);
+
+    var mx=dirx,my=diry;
+    if(danger>0){
+      var px=-away_y,py=away_x;
+      if(demo.jt<=0){
+        var toGoalDot=px*dirx+py*diry;
+        demo.dodgeDir=toGoalDot>=0?1:-1;
+        if(danger>0.75&&Math.random()<0.6)demo.dodgeDir*=-1;
+        demo.jt=rand(0.35,0.7);
+      }
+      var perpx=px*demo.dodgeDir,perpy=py*demo.dodgeDir;
+      var w=danger;
+      mx=dirx*(1-0.55*w)+perpx*(1.15*w)+away_x*(0.35*w);
+      my=diry*(1-0.55*w)+perpy*(1.15*w)+away_y*(0.35*w);
+    }
+    var ml=Math.hypot(mx,my)||1;
+    mx/=ml;my/=ml;
+
+    var speed=290+danger*120;
+    target.x=player.x+mx*speed*0.18;
+    target.y=player.y+my*speed*0.18;
+    target.x=Math.max(40,Math.min(W-40,target.x));
+    target.y=Math.max(40,Math.min(H-40,target.y));
+  }
+
+  function predictTarget(){
+    var lead=0.42;
+    var pvx=player.x-player.px,pvy=player.y-player.py;
+    return {x:player.x+pvx*lead*3.0,y:player.y+pvy*lead*3.0};
+  }
+
+  function step(dt){
+    t+=dt;
+    if(humanControl && (t-lastHuman)>3.0){humanControl=false;}
+
+    if(!humanControl)updateDemo(dt);
+
+    player.px=player.x;player.py=player.y;
+
+    var dx=target.x-player.x,dy=target.y-player.y;
+    var followMax=humanControl?900:640;
+    var maxStep=followMax*dt;
+    var d=Math.hypot(dx,dy);
+    var ease=humanControl?0.55:0.42;
+    var mvx=dx*ease,mvy=dy*ease;
+    var ml=Math.hypot(mvx,mvy);
+    if(ml>maxStep){mvx=mvx/ml*maxStep;mvy=mvy/ml*maxStep;}
+    player.x+=mvx;player.y+=mvy;
+    player.x=Math.max(player.r,Math.min(W-player.r,player.x));
+    player.y=Math.max(player.r,Math.min(H-player.r,player.y));
+    player.vx=player.x-player.px;player.vy=player.y-player.py;
+
+    var pspeed=Math.hypot(player.vx,player.vy)/dt;
+    var moveDir=Math.atan2(player.vy,player.vx);
+
+    if(oni.stun>0){
+      oni.stun-=dt;
+      oni.x+=oni.vx*0.25;oni.y+=oni.vy*0.25;
+    }else{
+      var pred=predictTarget();
+      var tx=pred.x-oni.x,ty=pred.y-oni.y;
+      var tl=Math.hypot(tx,ty)||1;
+      var chaseSpd=248;
+      var desiredx=tx/tl*chaseSpd,desiredy=ty/tl*chaseSpd;
+      var accel=6.5;
+      oni.vx+=(desiredx-oni.vx/dt*0)*0;
+      oni.vx=oni.vx+((desiredx*dt)-oni.vx)*Math.min(1,accel*dt);
+      oni.vy=oni.vy+((desiredy*dt)-oni.vy)*Math.min(1,accel*dt);
+      oni.x+=oni.vx;oni.y+=oni.vy;
+    }
+    oni.x=Math.max(oni.r,Math.min(W-oni.r,oni.x));
+    oni.y=Math.max(oni.r,Math.min(H-oni.r,oni.y));
+
+    var odx=player.x-oni.x,ody=player.y-oni.y;
+    var odist=Math.hypot(odx,ody);
+    if(odist<120 && oni.stun<=0){
+      var oniHeading=Math.atan2(oni.vy,oni.vx);
+      var toPlayer=Math.atan2(ody,odx);
+      var turn=Math.abs(((moveDir-toPlayer+Math.PI*3)%(Math.PI*2))-Math.PI);
+      var speedOK=pspeed>260;
+      if(speedOK && turn>1.15 && odist<118 && odist>oni.r+player.r+4){
+        oni.stun=0.55;
+        oni.vx*=-0.3;oni.vy*=-0.3;
+        jukeFlash=1;
+        addParticles((player.x+oni.x)/2,(player.y+oni.y)/2,COL_ONI,14,320);
+        addParticles(oni.x,oni.y,"#ffffff",8,220);
+      }
+    }
+
+    if(odist<oni.r+player.r-2 && oni.stun<=0){
+      flash=1;
+      addParticles(player.x,player.y,COL_PLAYER,18,300);
+      resetRound(true);
+      return;
+    }
+
+    for(var i=0;i<stars.length;i++){
+      var s=stars[i];
+      if(s.got)continue;
+      s.spin+=dt*2.2;s.bob+=dt*3;
+      if(Math.hypot(s.x-player.x,s.y-player.y)<player.r+16){
+        s.got=true;score+=10;
+        addParticles(s.x,s.y,COL_STAR,16,260);
+      }
+    }
+
+    goal.pulse+=dt*3;
+    if(allStarsGot()){
+      if(Math.hypot(goal.x-player.x,goal.y-player.y)<goal.r-6){
+        score+=50;flash=1;
+        addParticles(goal.x,goal.y,COL_GOAL,26,340);
+        resetRound(true);
+        return;
+      }
+    }
+
+    for(var p=particles.length-1;p>=0;p--){
+      var pt=particles[p];
+      pt.x+=pt.vx*dt;pt.y+=pt.vy*dt;
+      pt.vx*=0.92;pt.vy*=0.92;
+      pt.life-=dt*1.6;
+      if(pt.life<=0)particles.splice(p,1);
+    }
+    if(flash>0)flash-=dt*2.2;
+    if(jukeFlash>0)jukeFlash-=dt*2.5;
+
+    if(scoreEl)scoreEl.textContent="スコア "+score;
+    if(modeEl)modeEl.textContent=humanControl?"あなたが操作中！（数秒なぞらないとお手本に戻ります）":"お手本デモ再生中…（画面をなぞると操作できます）";
+  }
+
+  function drawRoundRect(x,y,w,h,r){
+    ctx.beginPath();
+    ctx.moveTo(x+r,y);
+    ctx.arcTo(x+w,y,x+w,y+h,r);
+    ctx.arcTo(x+w,y+h,x,y+h,r);
+    ctx.arcTo(x,y+h,x,y,r);
+    ctx.arcTo(x,y,x+w,y,r);
+    ctx.closePath();
+  }
+
+  function drawStar(x,y,r,rot){
+    ctx.beginPath();
+    for(var i=0;i<10;i++){
+      var ang=rot+i*Math.PI/5;
+      var rr=(i%2===0)?r:r*0.45;
+      var px=x+Math.cos(ang)*rr,py=y+Math.sin(ang)*rr;
+      if(i===0)ctx.moveTo(px,py);else ctx.lineTo(px,py);
+    }
+    ctx.closePath();
+  }
+
+  function draw(){
+    ctx.fillStyle=COL_BG1;
+    ctx.fillRect(0,0,W,H);
+    var pad=18;
+    ctx.fillStyle=COL_FIELD;
+    drawRoundRect(pad,pad,W-pad*2,H-pad*2,20);
+    ctx.fill();
+
+    ctx.strokeStyle="rgba(255,255,255,0.05)";
+    ctx.lineWidth=1;
+    for(var gx=pad+40;gx<W-pad;gx+=54){
+      ctx.beginPath();ctx.moveTo(gx,pad+4);ctx.lineTo(gx,H-pad-4);ctx.stroke();
+    }
+    for(var gy=pad+40;gy<H-pad;gy+=54){
+      ctx.beginPath();ctx.moveTo(pad+4,gy);ctx.lineTo(W-pad-4,gy);ctx.stroke();
+    }
+
+    var glow=0.5+0.5*Math.sin(goal.pulse);
+    var open=allStarsGot();
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(goal.x,goal.y,goal.r+8+glow*6,0,6.2832);
+    ctx.strokeStyle=open?"rgba(126,240,196,"+(0.5+glow*0.4)+")":"rgba(126,240,196,0.18)";
+    ctx.lineWidth=open?6:4;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(goal.x,goal.y,goal.r,0,6.2832);
+    ctx.strokeStyle=open?"#7ef0c4":"rgba(126,240,196,0.35)";
+    ctx.lineWidth=5;
+    ctx.setLineDash(open?[]:[10,10]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle=open?"rgba(126,240,196,0.14)":"rgba(126,240,196,0.05)";
+    ctx.fill();
+    ctx.font="26px system-ui";
+    ctx.textAlign="center";ctx.textBaseline="middle";
+    ctx.fillText(open?"🏁":"🔒",goal.x,goal.y);
+    ctx.restore();
+
+    for(var i=0;i<stars.length;i++){
+      var s=stars[i];
+      if(s.got)continue;
+      var by=s.y+Math.sin(s.bob)*4;
+      ctx.save();
+      ctx.shadowColor="rgba(255,213,74,0.6)";ctx.shadowBlur=16;
+      drawStar(s.x,by,16,s.spin);
+      ctx.fillStyle=COL_STAR;
+      ctx.fill();
+      ctx.restore();
+      drawStar(s.x,by,16,s.spin);
+      ctx.strokeStyle="#e0a800";ctx.lineWidth=1.5;ctx.stroke();
+    }
+
+    var pt2;
+    for(var p=0;p<particles.length;p++){
+      pt2=particles[p];
+      ctx.globalAlpha=Math.max(0,pt2.life);
+      ctx.fillStyle=pt2.color;
+      ctx.beginPath();ctx.arc(pt2.x,pt2.y,pt2.r,0,6.2832);ctx.fill();
+    }
+    ctx.globalAlpha=1;
+
+    ctx.save();
+    if(oni.stun>0){
+      var wob=Math.sin(t*40)*3*(oni.stun/0.55);
+      ctx.translate(oni.x+wob,oni.y);
+    }else{
+      ctx.translate(oni.x,oni.y);
+    }
+    ctx.beginPath();ctx.arc(0,7,oni.r*0.95,0,6.2832);
+    ctx.fillStyle="rgba(0,0,0,0.22)";ctx.fill();
+    ctx.beginPath();ctx.arc(0,0,oni.r,0,6.2832);
+    ctx.fillStyle=oni.stun>0?"#ffb0b0":COL_ONI;ctx.fill();
+    ctx.lineWidth=3;ctx.strokeStyle=COL_ONI_D;ctx.stroke();
+    ctx.fillStyle="#fff";
+    ctx.beginPath();ctx.arc(-6,-4,4,0,6.2832);ctx.arc(7,-4,4,0,6.2832);ctx.fill();
+    ctx.fillStyle="#3a1010";
+    if(oni.stun>0){
+      ctx.font="14px system-ui";ctx.textAlign="center";ctx.textBaseline="middle";
+      ctx.fillText("@ @",0,-3);
+    }else{
+      var la=Math.atan2(player.y-oni.y,player.x-oni.x);
+      ctx.beginPath();ctx.arc(-6+Math.cos(la)*2,-4+Math.sin(la)*2,2,0,6.2832);
+      ctx.arc(7+Math.cos(la)*2,-4+Math.sin(la)*2,2,0,6.2832);ctx.fill();
+    }
+    ctx.restore();
+
+    if(oni.stun>0){
+      ctx.save();
+      ctx.globalAlpha=Math.min(1,oni.stun/0.55);
+      ctx.font="20px system-ui";ctx.textAlign="center";
+      ctx.fillText("💫",oni.x,oni.y-oni.r-14);
+      ctx.restore();
+    }
+
+    var pspd=Math.hypot(player.vx,player.vy);
+    if(pspd>3){
+      var ta=Math.atan2(-player.vy,-player.vx);
+      for(var tr=1;tr<=3;tr++){
+        ctx.globalAlpha=0.12*(4-tr);
+        ctx.beginPath();
+        ctx.arc(player.x+Math.cos(ta)*tr*7,player.y+Math.sin(ta)*tr*7,player.r-tr*2,0,6.2832);
+        ctx.fillStyle=COL_PLAYER;ctx.fill();
+      }
+      ctx.globalAlpha=1;
+    }
+    ctx.beginPath();ctx.arc(player.x,player.y+6,player.r*0.9,0,6.2832);
+    ctx.fillStyle="rgba(0,0,0,0.22)";ctx.fill();
+    ctx.beginPath();ctx.arc(player.x,player.y,player.r,0,6.2832);
+    ctx.fillStyle=COL_PLAYER;ctx.fill();
+    ctx.lineWidth=3;ctx.strokeStyle=COL_PLAYER_D;ctx.stroke();
+    ctx.fillStyle="#fff";
+    ctx.beginPath();ctx.arc(player.x-5,player.y-4,3.5,0,6.2832);ctx.arc(player.x+6,player.y-4,3.5,0,6.2832);ctx.fill();
+    ctx.fillStyle="#0b3a55";
+    ctx.beginPath();ctx.arc(player.x-5,player.y-4,1.8,0,6.2832);ctx.arc(player.x+6,player.y-4,1.8,0,6.2832);ctx.fill();
+
+    if(jukeFlash>0){
+      ctx.save();
+      ctx.globalAlpha=jukeFlash;
+      ctx.font="bold 34px system-ui";
+      ctx.fillStyle="#ffe08a";
+      ctx.textAlign="center";
+      ctx.fillText("ジューク！",(player.x+oni.x)/2,(player.y+oni.y)/2-30);
+      ctx.restore();
+    }
+
+    if(flash>0){
+      ctx.fillStyle="rgba(255,255,255,"+(flash*0.35)+")";
+      ctx.fillRect(0,0,W,H);
+    }
+  }
+
+  function toCanvas(e){
+    var rect=canvas.getBoundingClientRect();
+    var cx,cy;
+    if(e.touches&&e.touches.length){cx=e.touches[0].clientX;cy=e.touches[0].clientY;}
+    else{cx=e.clientX;cy=e.clientY;}
+    return {x:(cx-rect.left)/rect.width*W,y:(cy-rect.top)/rect.height*H};
+  }
+  function onDown(e){
+    e.preventDefault();
+    humanControl=true;lastHuman=t;
+    var p=toCanvas(e);target.x=p.x;target.y=p.y;
+  }
+  function onMove(e){
+    if(!humanControl)return;
+    e.preventDefault();
+    lastHuman=t;
+    var p=toCanvas(e);target.x=p.x;target.y=p.y;
+  }
+  canvas.addEventListener("pointerdown",onDown);
+  canvas.addEventListener("pointermove",onMove);
+  window.addEventListener("pointerup",function(){});
+  canvas.addEventListener("touchstart",onDown,{passive:false});
+  canvas.addEventListener("touchmove",onMove,{passive:false});
+
+  resetRound(false);
+
+  var last=performance.now();
+  function loop(now){
+    var dt=(now-last)/1000;
+    if(dt>0.05)dt=0.05;
+    if(dt<0)dt=0;
+    last=now;
+    step(dt);
+    draw();
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+})();
+</script>
+</div></body></html>

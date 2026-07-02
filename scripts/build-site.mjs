@@ -17,8 +17,9 @@ const SITE = resolve(ROOT, '_site')
 
 const signalDist = resolve(ROOT, 'dist')
 const kitchenDist = resolve(ROOT, 'panic-kitchen', 'dist')
+const miraiDist = resolve(ROOT, 'mirai-catch', 'dist')
 
-for (const [name, dir] of [['signal-hero', signalDist], ['panic-kitchen', kitchenDist]]) {
+for (const [name, dir] of [['signal-hero', signalDist], ['panic-kitchen', kitchenDist], ['mirai-catch', miraiDist]]) {
   if (!existsSync(dir)) {
     console.error(`✗ ${name} の dist がありません: ${dir}\n  先に各ゲームで npm run build を実行してください。`)
     process.exit(1)
@@ -29,6 +30,7 @@ rmSync(SITE, { recursive: true, force: true })
 mkdirSync(SITE, { recursive: true })
 cpSync(signalDist, resolve(SITE, 'signal-hero'), { recursive: true })
 cpSync(kitchenDist, resolve(SITE, 'panic-kitchen'), { recursive: true })
+cpSync(miraiDist, resolve(SITE, 'mirai-catch'), { recursive: true })
 copyFileSync(resolve(ROOT, 'scripts', 'landing.html'), resolve(SITE, 'index.html'))
 writeFileSync(resolve(SITE, '.nojekyll'), '')
 

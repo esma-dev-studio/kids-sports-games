@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>オトサキ・ラリー ミニプレビュー — プレビュー</title><style>:root{--surface-0:#f4f3ee;--surface-1:#fcfcfb;--surface-2:#fff;--text-primary:#0b0b0b;--text-secondary:#52514e;--text-muted:#898781;--text-accent:#185fa5;--border:rgba(11,11,11,.10);--radius:8px}@media(prefers-color-scheme:dark){:root{--surface-0:#1a1a19;--surface-1:#232322;--surface-2:#2b2b29;--text-primary:#fff;--text-secondary:#c3c2b7;--text-muted:#8f8e88;--text-accent:#85b7eb;--border:rgba(255,255,255,.12)}}
+html,body{margin:0;background:var(--surface-0);color:var(--text-primary);font-family:system-ui,-apple-system,"Segoe UI",sans-serif}.page{max-width:740px;margin:0 auto;padding:18px 16px 40px;box-sizing:border-box}</style></head><body><div class="page">
+<style>
+.oto-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;}
+.oto-frame{background:var(--surface-1);border-radius:12px;padding:12px;}
+.oto-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:8px;}
+.oto-title{font-size:16px;font-weight:500;color:var(--text-primary);}
+.oto-hint{font-size:13px;color:var(--text-secondary);}
+</style>
+<h2 class="oto-sr-only">オトサキ・ラリー：上部インジケーターが示すチャンネル（🎧音か👀見た目）に従い、正しい側の合図に左右キーまたは左右タップで応答する子ども向け反応ゲームのミニプレビュー。放置中は正しく従うお手本の自動デモが再生されます。</h2>
+<div class="oto-frame">
+  <div class="oto-head">
+    <span class="oto-title">🎧 オトサキ・ラリー</span>
+    <span class="oto-hint">上のチャンネル（🎧音／👀見た目）に従う側へ　← → キー or 左右タップ</span>
+  </div>
+  <canvas id="oto-canvas" width="1040" height="620" style="display:block;width:100%;height:auto;border-radius:8px;"></canvas>
+</div>
+<script>
+(function(){
+  var canvas = document.getElementById("oto-canvas");
+  if(!canvas || !canvas.getContext){ return; }
+  var ctx = canvas.getContext("2d");
+  var W = canvas.width, H = canvas.height;
+
+  var COL = {
+    bgTop:"#1b1230", bgBot:"#2a1a4a",
+    text:"#f6f1ff", sub:"#c9b8f0",
+    audio:"#5dcaa5", vision:"#ef9f27",
+    left:"#378add", right:"#d4537e",
+    good:"#97c459", bad:"#e24b4a"
+  };
+
+  var CH_AUDIO = 0, CH_VISION = 1;
+  var state = {
+    channel: CH_AUDIO,
+    score: 0, combo: 0, best: 0,
+    cue: null, parts: [], ripples: [],
+    flash: 0, flashCol: COL.good,
+    mascotBounce: 0, mascotShake: 0,
+    channelTimer: 0,
+    auto: true, lastInput: -99999,
+    ghostPlanned: null, faceMood: 0, tick: 0
+  };
+
+  var audioCtx = null;
+  function ensureAudio(){
+    if(audioCtx) return;
+    try{
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if(AC){ audioCtx = new AC(); }
+    }catch(e){ audioCtx = null; }
+  }
+  function beep(side){
+    if(!audioCtx) return;
+    try{
+      var o = audioCtx.createOscillator();
+      var g = audioCtx.createGain();
+      o.type = "sine";
+      o.frequency.value = side === 0 ? 392 : 587;
+      o.connect(g); g.connect(audioCtx.destination);
+      var t = audioCtx.currentTime;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.16, t+0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t+0.28);
+      o.start(t); o.stop(t+0.3);
+    }catch(e){}
+  }
+
+  function rand(a,b){ return a + Math.random()*(b-a); }
+
+  function spawnCue(){
+    var truthSide = Math.random() < 0.5 ? 0 : 1;
+    var lureSide = 1 - truthSide;
+    var lureMatches = Math.random() < 0.35;
+    var otherSide = lureMatches ? truthSide : lureSide;
+    state.cue = {
+      truthSide: truthSide, otherSide: otherSide,
+      channel: state.channel, t: 0, life: 132,
+      answered: false, pulse: 0
+    };
+    state.ghostPlanned = null;
+  }
+
+  function addParticles(x,y,col,n){
+    for(var i=0;i<n;i++){
+      var a = rand(0, Math.PI*2);
+      var sp = rand(2,6.5);
+      state.parts.push({
+        x:x, y:y,
+        vx:Math.cos(a)*sp, vy:Math.sin(a)*sp - 1.5,
+        life:1, col:col, r:rand(3,7)
+      });
+    }
+  }
+
+  function addRipple(side, col){
+    var x = side === 0 ? W*0.16 : W*0.84;
+    state.ripples.push({ x:x, y:H*0.52, r:14, life:1, col:col });
+  }
+
+  function respond(side){
+    var cue = state.cue;
+    if(!cue || cue.answered) return;
+    cue.answered = true;
+    var correct = (side === cue.truthSide);
+    if(correct){
+      state.score += 10;
+      state.combo += 1;
+      if(state.combo > state.best) state.best = state.combo;
+      state.flash = 1; state.flashCol = COL.good;
+      state.mascotBounce = 1; state.faceMood = 1;
+      addParticles(W/2, H*0.5, COL.good, 14);
+      addParticles(W/2, H*0.5, side===0?COL.left:COL.right, 8);
+    } else {
+      state.combo = 0;
+      state.score = Math.max(0, state.score - 4);
+      state.flash = 1; state.flashCol = COL.bad;
+      state.mascotShake = 1; state.faceMood = -1;
+      addParticles(W/2, H*0.5, COL.bad, 10);
+    }
+    setTimeout(function(){
+      if(state.cue === cue){ state.cue = null; }
+    }, 260);
+  }
+
+  function humanInput(side){
+    ensureAudio();
+    state.auto = false;
+    state.lastInput = state.tick;
+    if(!state.cue){ return; }
+    respond(side);
+  }
+
+  window.addEventListener("keydown", function(e){
+    if(e.key === "ArrowLeft"){ humanInput(0); e.preventDefault(); }
+    else if(e.key === "ArrowRight"){ humanInput(1); e.preventDefault(); }
+  });
+
+  canvas.addEventListener("pointerdown", function(e){
+    var rect = canvas.getBoundingClientRect();
+    var x = (e.clientX - rect.left) / rect.width;
+    humanInput(x < 0.5 ? 0 : 1);
+  });
+
+  function drawShape(x,y,kind,col,scale){
+    ctx.save();
+    ctx.translate(x,y);
+    ctx.scale(scale,scale);
+    ctx.fillStyle = col;
+    ctx.strokeStyle = "rgba(255,255,255,0.85)";
+    ctx.lineWidth = 3;
+    if(kind === 0){
+      ctx.beginPath();
+      ctx.moveTo(-22,-14); ctx.lineTo(6,-14); ctx.lineTo(6,-26);
+      ctx.lineTo(30,0); ctx.lineTo(6,26); ctx.lineTo(6,14); ctx.lineTo(-22,14);
+      ctx.closePath();
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(22,-14); ctx.lineTo(-6,-14); ctx.lineTo(-6,-26);
+      ctx.lineTo(-30,0); ctx.lineTo(-6,26); ctx.lineTo(-6,14); ctx.lineTo(22,14);
+      ctx.closePath();
+    }
+    ctx.fill(); ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawMascot(cx, cy){
+    var b = state.mascotBounce;
+    var sh = state.mascotShake;
+    var yoff = -Math.sin(b*Math.PI)*16;
+    var xoff = sh>0 ? Math.sin(state.tick*0.9)*8*sh : 0;
+    ctx.save();
+    ctx.translate(cx+xoff, cy+yoff);
+    var breath = 1 + Math.sin(state.tick*0.06)*0.03;
+    ctx.scale(breath, breath);
+    ctx.fillStyle = "rgba(0,0,0,0.22)";
+    ctx.beginPath(); ctx.ellipse(0, 70, 52, 14, 0, 0, Math.PI*2); ctx.fill();
+    var body = state.channel === CH_AUDIO ? "#7f77dd" : "#f0997b";
+    ctx.fillStyle = body;
+    ctx.beginPath(); ctx.roundRect(-52,-56,104,120,44); ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,0.9)";
+    ctx.beginPath(); ctx.roundRect(-40,-30,80,64,30); ctx.fill();
+    var mood = state.faceMood;
+    ctx.fillStyle = "#2a1a4a";
+    var eyeY = -6;
+    ctx.beginPath(); ctx.arc(-16,eyeY,7,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(16,eyeY,7,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle = "#fff";
+    ctx.beginPath(); ctx.arc(-14,eyeY-2,2.5,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(18,eyeY-2,2.5,0,Math.PI*2); ctx.fill();
+    ctx.strokeStyle = "#2a1a4a"; ctx.lineWidth = 4; ctx.lineCap="round";
+    ctx.beginPath();
+    if(mood > 0){ ctx.arc(0,10,14,0.15*Math.PI,0.85*Math.PI); }
+    else if(mood < 0){ ctx.arc(0,26,12,1.15*Math.PI,1.85*Math.PI); }
+    else { ctx.moveTo(-10,16); ctx.lineTo(10,16); }
+    ctx.stroke();
+    ctx.font = "26px sans-serif";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(state.channel === CH_AUDIO ? "🎧" : "👀", 0, -80);
+    ctx.restore();
+  }
+
+  function drawChannelBanner(){
+    var isAudio = state.channel === CH_AUDIO;
+    var label = isAudio ? "🎧 音に従う" : "👀 見た目に従う";
+    var col = isAudio ? COL.audio : COL.vision;
+    var bw = 460, bh = 74, bx = (W-bw)/2, by = 26;
+    var t = state.channelTimer;
+    var pop = t < 22 ? 1 + Math.sin((t/22)*Math.PI)*0.06 : 1;
+    ctx.save();
+    ctx.translate(W/2, by+bh/2);
+    ctx.scale(pop,pop);
+    ctx.translate(-W/2, -(by+bh/2));
+    ctx.fillStyle = "rgba(0,0,0,0.25)";
+    ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 20); ctx.fill();
+    ctx.strokeStyle = col; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 20); ctx.stroke();
+    ctx.fillStyle = col;
+    ctx.font = "600 34px sans-serif";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(label, W/2, by+bh/2);
+    ctx.restore();
+    ctx.fillStyle = COL.sub;
+    ctx.font = "17px sans-serif";
+    ctx.textAlign = "center"; ctx.textBaseline = "top";
+    ctx.fillText(isAudio ? "音の合図がある側へ（波紋を見て）" : "矢印が指す側へ", W/2, by+bh+8);
+  }
+
+  function drawCue(){
+    var cue = state.cue;
+    if(!cue) return;
+    var appear = Math.min(1, cue.t/10);
+    var scale = 0.6 + appear*0.4;
+    var lx = W*0.16, rx = W*0.84, y = H*0.52;
+    if(cue.channel === CH_VISION){
+      drawShape(lx, y, cue.truthSide===0?0:1, COL.left, scale);
+      drawShape(rx, y, cue.otherSide===0?0:1, COL.right, scale);
+    } else {
+      ctx.save();
+      ctx.font = "40px sans-serif";
+      ctx.textAlign="center"; ctx.textBaseline="middle";
+      ctx.globalAlpha = 0.5*appear;
+      ctx.fillText("🔊", lx, y-70*scale);
+      ctx.fillText("🔊", rx, y-70*scale);
+      ctx.restore();
+    }
+  }
+
+  function drawSideMarkers(){
+    ctx.save();
+    ctx.font = "22px sans-serif";
+    ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.fillStyle = COL.left;
+    ctx.fillText("◀ 左", W*0.16, H*0.86);
+    ctx.fillStyle = COL.right;
+    ctx.fillText("右 ▶", W*0.84, H*0.86);
+    ctx.restore();
+  }
+
+  function update(){
+    state.tick += 1;
+    if(state.flash > 0) state.flash = Math.max(0, state.flash - 0.05);
+    if(state.mascotBounce > 0) state.mascotBounce = Math.max(0, state.mascotBounce - 0.04);
+    if(state.mascotShake > 0) state.mascotShake = Math.max(0, state.mascotShake - 0.05);
+    if(state.channelTimer < 9999) state.channelTimer++;
+
+    if(!state.auto && (state.tick - state.lastInput) > 210){ state.auto = true; }
+
+    for(var i=state.parts.length-1;i>=0;i--){
+      var p = state.parts[i];
+      p.x += p.vx; p.y += p.vy; p.vy += 0.22; p.vx *= 0.98;
+      p.life -= 0.028;
+      if(p.life <= 0) state.parts.splice(i,1);
+    }
+    for(var j=state.ripples.length-1;j>=0;j--){
+      var rp = state.ripples[j];
+      rp.r += 3.2; rp.life -= 0.03;
+      if(rp.life <= 0) state.ripples.splice(j,1);
+    }
+
+    if(!state.cue){
+      if(!state._gap){ state._gap = state.tick + Math.round(rand(24,46)); }
+      if(state.tick >= state._gap){ spawnCue(); state._gap = 0; }
+    } else {
+      var cue = state.cue;
+      cue.t++;
+      if(cue.channel === CH_AUDIO && cue.t % 22 === 0){
+        addRipple(cue.truthSide, cue.truthSide===0?COL.left:COL.right);
+        if(audioCtx && cue.t < 90){ beep(cue.truthSide); }
+      }
+      if(!cue.answered && state.auto){
+        if(cue.t > 26 && !state.ghostPlanned){
+          state.ghostPlanned = cue.t + Math.round(rand(8,20));
+        }
+        if(state.ghostPlanned && cue.t >= state.ghostPlanned){
+          respond(cue.truthSide);
+        }
+      }
+      if(cue.t > cue.life && !cue.answered){ state.cue = null; state.combo = 0; }
+    }
+
+    if(state.tick % 380 === 0 && state.tick > 0){
+      state.channel = state.channel === CH_AUDIO ? CH_VISION : CH_AUDIO;
+      state.channelTimer = 0;
+    }
+  }
+
+  function render(){
+    ctx.clearRect(0,0,W,H);
+    var g = ctx.createLinearGradient(0,0,0,H);
+    g.addColorStop(0, COL.bgTop);
+    g.addColorStop(1, COL.bgBot);
+    ctx.fillStyle = g;
+    ctx.fillRect(0,0,W,H);
+
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    for(var s=0;s<2;s++){
+      var cx = s===0 ? W*0.16 : W*0.84;
+      ctx.strokeStyle = "rgba(255,255,255,0.06)";
+      ctx.lineWidth = 2;
+      for(var rr=40; rr<160; rr+=40){
+        ctx.beginPath(); ctx.arc(cx, H*0.52, rr, 0, Math.PI*2); ctx.stroke();
+      }
+    }
+    ctx.restore();
+
+    for(var j=0;j<state.ripples.length;j++){
+      var rp = state.ripples[j];
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, rp.life)*0.8;
+      ctx.strokeStyle = rp.col; ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.arc(rp.x, rp.y, rp.r, 0, Math.PI*2); ctx.stroke();
+      ctx.restore();
+    }
+
+    drawCue();
+    drawMascot(W/2, H*0.52);
+    drawSideMarkers();
+
+    for(var i=0;i<state.parts.length;i++){
+      var p = state.parts[i];
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, p.life);
+      ctx.fillStyle = p.col;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r*p.life, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
+    }
+
+    drawChannelBanner();
+
+    ctx.fillStyle = COL.text;
+    ctx.font = "600 30px sans-serif";
+    ctx.textAlign = "left"; ctx.textBaseline = "top";
+    ctx.fillText("スコア " + state.score, 28, H-58);
+    ctx.fillStyle = COL.sub;
+    ctx.font = "20px sans-serif";
+    ctx.fillText("連続 " + state.combo + " / 最高 " + state.best, 28, H-26);
+
+    ctx.textAlign = "right";
+    ctx.fillStyle = state.auto ? COL.audio : COL.vision;
+    ctx.font = "20px sans-serif";
+    ctx.fillText(state.auto ? "🤖 自動デモ中" : "🎮 あなたが操作中", W-28, H-30);
+
+    if(state.flash > 0){
+      ctx.save();
+      ctx.globalAlpha = state.flash*0.28;
+      ctx.fillStyle = state.flashCol;
+      ctx.fillRect(0,0,W,H);
+      ctx.restore();
+    }
+  }
+
+  function loop(){ update(); render(); requestAnimationFrame(loop); }
+  spawnCue();
+  state.cue.t = -20;
+  requestAnimationFrame(loop);
+})();
+</script>
+</div></body></html>

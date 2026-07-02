@@ -42,6 +42,7 @@
   .card:hover { transform: translateY(-4px); box-shadow: 0 16px 34px rgba(31, 43, 40, 0.2); }
   .card.go { border-color: #1fa88a; }
   .card.kitchen { border-color: #e0771f; }
+  .card.mirai { border-color: #2f7fd6; }
   .badge {
     display: inline-flex; align-items: center; justify-content: center;
     width: 64px; height: 64px; border-radius: 18px; margin-bottom: 14px;
@@ -57,13 +58,15 @@
   }
   .go .play { background: #1fa88a; }
   .kitchen .play { background: #e0771f; }
+  .mirai .badge { background: #2f7fd6; }
+  .mirai .play { background: #2f7fd6; }
   footer { margin-top: 30px; text-align: center; color: #7a8079; font-size: 12px; line-height: 1.7; max-width: 560px; }
 </style>
 </head>
 <body>
   <header>
     <h1>あそんで きたえる ミニゲーム</h1>
-    <p class="sub">はんしゃ・見きわめ・全体把握のちからを、あそびながらそだてる2つのゲーム</p>
+    <p class="sub">はんしゃ・見きわめ・全体把握・先読みのちからを、あそびながらそだてる3つのゲーム</p>
   </header>
 
   <main class="cards">
@@ -78,6 +81,13 @@
       <span class="badge">▲</span>
       <h2>パニックキッチン</h2>
       <p>とんでくる食材を、色とアイコンの合うお皿へ仕分け。全体をよく見る大混雑アクション。</p>
+      <span class="play">あそぶ →</span>
+    </a>
+
+    <a class="card mirai" href="./mirai-catch/">
+      <span class="badge">🎯</span>
+      <h2>みらいキャッチ</h2>
+      <p>飛んでくる球の“未来の通り道”を先読みして、着く前に先回りキャッチ。予測の力の下地づくり。</p>
       <span class="play">あそぶ →</span>
     </a>
   </main>
