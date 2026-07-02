@@ -69,18 +69,21 @@ export class MiraiGame {
 
   private spawnBall(): void {
     const top = Math.random() < 0.4
-    const speed = this.rnd(this.diff.speedMin, this.diff.speedMax)
+    // 終盤ほど速く（本番のみ）。attractは一定。
+    const ramp = this.opts.attract ? 1 : 1 + Math.min(0.35, ((ROUND_TIME - this.timeLeft) / ROUND_TIME) * 0.35)
+    const speed = this.rnd(this.diff.speedMin, this.diff.speedMax) * ramp
     const curve = Math.random() < this.diff.curveProb
-    const aimX = this.rnd(GOAL_X + 120, W - 360)
-    const aimY = this.rnd(150, H - 150)
+    // 必ずゴール方向（左）へ。狙いのyはパッドの届く範囲内＝理不尽な失点をなくす。
+    const aimX = GOAL_X - 30
+    const aimY = this.rnd(PAD_MINY + 26, PAD_MAXY - 26)
     let sx: number, sy: number
-    if (top) { sx = this.rnd(W * 0.4, W * 0.92); sy = -12 }
-    else { sx = W - 14; sy = this.rnd(130, H - 130) }
+    if (top) { sx = this.rnd(W * 0.6, W * 0.9); sy = -12 }
+    else { sx = W - 14; sy = this.rnd(120, H - 120) }
     const dx = aimX - sx, dy = aimY - sy
     const d = Math.sqrt(dx * dx + dy * dy) || 1
     this.ball = {
       x: sx, y: sy, vx: (dx / d) * speed, vy: (dy / d) * speed, r: 15,
-      curve, curveA: (Math.random() < 0.5 ? -1 : 1) * this.rnd(1.4, 2.4), curveApplied: false, age: 0,
+      curve, curveA: (Math.random() < 0.5 ? -1 : 1) * this.rnd(0.6, 1.1), curveApplied: false, age: 0,
       ghostT: this.diff.ghostTime, trail: [], color: curve ? COL.curve : COL.go, done: false,
     }
     this.balls++
@@ -218,7 +221,7 @@ export class MiraiGame {
       b.ghostT -= dt
       b.trail.push({ x: b.x, y: b.y })
       if (b.trail.length > 10) b.trail.shift()
-      if (b.y < -40 || b.y > H + 40) { this.ball = null }
+      if (b.y < -40 || b.y > H + 40) { this.balls--; this.ball = null }
       else {
         // パッド平面を横切ったか
         if (prevX > PAD_X && b.x <= PAD_X) {

@@ -12,8 +12,8 @@ export interface Diff {
 }
 
 export const DIFF: Record<Mode, Diff> = {
-  easy: { speedMin: 300, speedMax: 400, ghostTime: 0.62, padW: 30, padH: 156, padSpeed: 900, curveProb: 0.12, lives: 0 },
-  normal: { speedMin: 360, speedMax: 470, ghostTime: 0.42, padW: 24, padH: 120, padSpeed: 640, curveProb: 0.34, lives: 3 },
+  easy: { speedMin: 340, speedMax: 440, ghostTime: 0.55, padW: 30, padH: 138, padSpeed: 760, curveProb: 0.22, lives: 0 },
+  normal: { speedMin: 470, speedMax: 620, ghostTime: 0.36, padW: 22, padH: 96, padSpeed: 540, curveProb: 0.46, lives: 3 },
 }
 
 export const W = 1040
