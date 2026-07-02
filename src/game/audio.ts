@@ -38,9 +38,10 @@ function blip(freqs: number[], dur: number, type: OscillatorType, gain: number):
   })
 }
 
-// 味方を叩けた（正解）
-export function playPop(): void {
-  blip([660, 990], 0.14, 'triangle', 0.18)
+// 味方を叩けた（正解）。stepが大きいほど1音ずつ高くなる（コンボ音階）
+export function playPop(step?: number): void {
+  const ratio = step ? Math.pow(2, Math.min(12, Math.max(0, step)) / 12) : 1
+  blip([660 * ratio, 990 * ratio], 0.14, 'triangle', 0.18)
 }
 // ニセ光を我慢できた（見きわめ成功）— 静かな肯定
 export function playGaman(): void {
@@ -49,4 +50,8 @@ export function playGaman(): void {
 // ニセ光に触ってしまった（ミス）
 export function playMiss(): void {
   blip([196, 130.8], 0.2, 'sawtooth', 0.12)
+}
+// 新記録・新バッジのお祝い（短い上昇ファンファーレ）
+export function playFanfare(): void {
+  blip([523.25, 659.25, 783.99, 1046.5], 0.18, 'triangle', 0.16)
 }

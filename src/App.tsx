@@ -2,11 +2,21 @@ import { useCallback, useMemo, useState } from 'react'
 import { GameCanvas } from './components/GameCanvas'
 import { MODE_LABEL } from './game/config'
 import type { Mode, RoundResult } from './game/types'
-import { unlock } from './game/audio'
+import { unlock, playFanfare } from './game/audio'
 import { addScore, load, qualifies, RANK_MAX, save, type SaveData, type ScoreEntry } from './game/storage'
-import { BADGES, accumulate, earnedIds, type Badge } from './game/badges'
+import { BADGES, accumulate, earnedIds, nextBadges, type Badge } from './game/badges'
 
 type Screen = 'menu' | 'tutorial' | 'playing' | 'result' | 'ranking' | 'badges'
+
+const MASCOT = { name: 'ピカまる', emoji: '🚦' }
+const SPEECH = {
+  menu: 'きょうも いっしょに ひかりを まもるピカ！',
+  best: 'ピッカーン！じこべすと！きみが いちばん かがやいてるピカ！！',
+  good: 'すごいピカ！ひかりたちが よろこんで ダンスしてるピカ！',
+  ok: 'いいちょうし！めが どんどん はやくなってるピカ！',
+  low: 'だいじょうぶピカ。×を がまんできたの、ちゃんと みてたよ。もういっかい いこうピカ！',
+  newBadge: 'ピカーン！あたらしい バッジ はっけん！つぎも いこうピカ！',
+}
 
 function Stars({ n }: { n: number }) {
   return (
@@ -15,6 +25,38 @@ function Stars({ n }: { n: number }) {
         <span key={i} className={i <= n ? 'star on' : 'star'}>★</span>
       ))}
     </span>
+  )
+}
+
+function Mascot({ text }: { text: string }) {
+  return (
+    <div className="mascot">
+      <span className="mascot-emoji" aria-hidden="true">{MASCOT.emoji}</span>
+      <div className="mascot-bubble">
+        <span className="mascot-name">{MASCOT.name}</span>
+        {text}
+      </div>
+    </div>
+  )
+}
+
+function Confetti() {
+  const cols = ['#FFD93D', '#4fc3f7', '#ff6b6b', '#7be08f', '#1fa88a', '#b06bff']
+  return (
+    <div className="confetti" aria-hidden="true">
+      {Array.from({ length: 24 }).map((_, i) => (
+        <span
+          key={i}
+          className="cf"
+          style={{
+            left: `${(i * 4.16) % 100}%`,
+            background: cols[i % cols.length],
+            animationDelay: `${(i % 6) * 0.08}s`,
+            animationDuration: `${1.6 + (i % 5) * 0.2}s`,
+          }}
+        />
+      ))}
+    </div>
   )
 }
 
@@ -32,6 +74,25 @@ function RankTable({ scores, highlight }: { scores: ScoreEntry[]; highlight?: nu
         </li>
       ))}
     </ol>
+  )
+}
+
+function NextBadges({ items }: { items: { badge: Badge; frac: number }[] }) {
+  if (items.length === 0) return null
+  return (
+    <div className="next-badges">
+      <p className="nb2-title">つぎの バッジ</p>
+      {items.map(({ badge, frac }) => (
+        <div key={badge.id} className="nb2-row">
+          <span className="nb2-ic">{badge.icon}</span>
+          <span className="nb2-info">
+            <span className="nb2-name">{badge.name}</span>
+            <span className="nb2-bar"><span className="nb2-fill" style={{ width: `${Math.round(frac * 100)}%` }} /></span>
+          </span>
+          <span className="nb2-pct">{Math.round(frac * 100)}%</span>
+        </div>
+      ))}
+    </div>
   )
 }
 
@@ -100,6 +161,7 @@ export default function App() {
     setNewRank(null)
     setRegistered(false)
     setNewBadges(BADGES.filter((b) => newly.includes(b.id)))
+    if ((r.isBestScore || newly.length > 0) && prev.sound) playFanfare()
     setScreen('result')
   }, [])
 
@@ -116,12 +178,24 @@ export default function App() {
   const modeButtons = useMemo<Mode[]>(() => ['easy', 'normal'], [])
   const canRegister = !!result && !registered && qualifies(data.scores, result.score)
   const earnedSet = useMemo(() => new Set(data.badges), [data.badges])
+  const teaser = useMemo(() => nextBadges(data.stats, earnedSet, 3), [data.stats, earnedSet])
+
+  let resultLine = SPEECH.ok
+  if (result) {
+    const stars = result.reactionStars + result.discernStars
+    resultLine = result.isBestScore ? SPEECH.best
+      : newBadges.length > 0 ? SPEECH.newBadge
+      : stars >= 5 ? SPEECH.good
+      : stars >= 3 ? SPEECH.ok
+      : SPEECH.low
+  }
+  const celebrate = !!result && (result.isBestScore || newBadges.length > 0)
 
   return (
-    <div className="app">
+    <div className={data.reducedMotion ? 'app rm' : 'app'}>
       <header className="app-head">
-        <h1>まもれ！シグナル・ヒーロー</h1>
-        <p className="tagline">味方が光ったらタッチ、敵のニセ光は<b>がまん</b>。</p>
+        <h1 className="title-pop">まもれ！シグナル・ヒーロー</h1>
+        <p className="tagline">ひかりを まもる ヒーローに なろう！</p>
       </header>
 
       <div className="stage">
@@ -142,11 +216,11 @@ export default function App() {
         {screen === 'menu' && (
           <div className="overlay">
             <div className="panel">
+              <Mascot text={SPEECH.menu} />
               <p className="panel-lead">
                 <span className="chip go">○ 味方＝たたく</span>
                 <span className="chip nogo">× 敵＝がまん</span>
               </p>
-              <p className="panel-sub">ニセ光を見きわめて手を止めると「見きわめボーナス」でスコアが伸びる！</p>
 
               <div className="mode-row" role="group" aria-label="むずかしさ">
                 {modeButtons.map((m) => (
@@ -165,6 +239,8 @@ export default function App() {
                 <button className="rank-link" onClick={() => setScreen('ranking')}>ランキング</button>
                 <button className="rank-link" onClick={() => setScreen('badges')}>バッジ図鑑 {data.badges.length}/{BADGES.length}</button>
               </div>
+
+              <NextBadges items={teaser} />
 
               <div className="best">
                 自己ベスト｜スコア <b>{best.score}</b>　コンボ <b>{best.combo}</b>　がまん連鎖 <b>{best.gaman}</b>
@@ -197,7 +273,7 @@ export default function App() {
                 <li><span className="chip nogo">×</span> 敵のニセ光は、さわらずにがまん。</li>
                 <li>がまんできると「見きわめボーナス」でスコアアップ。</li>
               </ol>
-              <p className="panel-sub">まちがえても大丈夫。ライフは3つ、40秒で1ゲーム。</p>
+              <p className="panel-sub">まちがえても大丈夫。ライフは3つ、40秒で1ゲーム。10コンボで「シグナルチャンス（2倍）」！</p>
               <button className="cta" onClick={onTutorialDone}>わかった！</button>
             </div>
           </div>
@@ -206,8 +282,10 @@ export default function App() {
         {screen === 'result' && result && (
           <div className="overlay">
             <div className="panel">
+              {celebrate && !data.reducedMotion && <Confetti />}
               {result.isBestScore && <div className="ribbon">自己ベスト更新！</div>}
               <h2 className="panel-title">スコア {result.score}</h2>
+              <Mascot text={resultLine} />
               <div className="score-row">
                 <div className="metric">
                   <span className="metric-label">反応の速さ</span>

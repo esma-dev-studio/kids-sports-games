@@ -3,7 +3,7 @@ import { DIFF, H, ROUND_TIME, SHUFFLE_EVERY, STATIONS, W, type Station } from '.
 import { playComplete, playMiss, playPlace } from './audio'
 import { load, save } from './storage'
 
-interface Plate { s: Station; x: number; y: number; w: number; h: number; fill: number; need: number; glow: number; shake: number }
+interface Plate { s: Station; x: number; y: number; w: number; h: number; fill: number; need: number; glow: number; shake: number; face: string; faceT: number }
 type ItemState = 'fly' | 'held' | 'gone'
 interface Item {
   s: Station; x: number; y: number; vx: number; vy: number; r: number
@@ -71,7 +71,7 @@ export class KitchenGame {
     this.plates = []
     for (let i = 0; i < n; i++) {
       const s = this.stations[order[i]]
-      this.plates.push({ s, x: marginX + i * (pw + gap), y: H - 150, w: pw, h: 118, fill: 0, need: this.diff.need, glow: 0, shake: 0 })
+      this.plates.push({ s, x: marginX + i * (pw + gap), y: H - 150, w: pw, h: 118, fill: 0, need: this.diff.need, glow: 0, shake: 0, face: '', faceT: 0 })
     }
   }
 
@@ -114,18 +114,20 @@ export class KitchenGame {
       this.combo++
       if (this.combo > this.maxCombo) this.maxCombo = this.combo
       this.correct++
+      p.face = this.combo >= 8 ? '🤩' : '😋'; p.faceT = 0.6
       const gain = 10 + this.combo * 2
       this.score += gain
       this.flash = 0.35
       this.burst(it.x, it.y, p.s.col, 10)
       this.floater(it.x, it.y - 20, '+' + gain, p.s.col)
       if (this.combo >= 2) this.floater(it.x, it.y - 46, this.combo + ' コンボ!', '#e08a1a')
-      if (this.opts.sound) playPlace()
+      if (this.opts.sound) playPlace(this.combo)
       it.state = 'gone'
       if (p.fill >= p.need) this.completePlate(p)
     } else {
       this.combo = 0
       this.mistakes++
+      p.face = '😲'; p.faceT = 0.6
       this.patience = Math.max(0, this.patience - 0.12)
       this.burst(it.x, it.y, '#999', 6)
       this.floater(it.x, it.y - 20, 'ちがう！', '#c0392b')
@@ -136,6 +138,7 @@ export class KitchenGame {
 
   private completePlate(p: Plate): void {
     p.glow = 1
+    p.face = '🤩'; p.faceT = 0.9
     this.platesDone++
     this.score += 50
     this.flash = 0.6
@@ -288,6 +291,7 @@ export class KitchenGame {
     for (const p of this.plates) {
       if (p.glow > 0) p.glow -= dt * 1.2
       if (p.shake > 0) p.shake -= dt * 3
+      if (p.faceT > 0) { p.faceT -= dt; if (p.faceT <= 0) p.face = '' }
     }
     if (this.flash > 0) this.flash -= dt * 1.8
   }
@@ -450,6 +454,13 @@ export class KitchenGame {
       ctx.beginPath(); ctx.ellipse(cx, cy, p.w * 0.46 + (1 - p.glow) * 40, p.h * 0.34 + (1 - p.glow) * 30, 0, 0, 6.28); ctx.stroke()
       ctx.globalAlpha = 1
     }
+    // お皿のごきげんフェイス（通常🙂・反応時に一瞬ぷるん）
+    const face = p.face || '🙂'
+    const fsc = this.opts.reducedMotion ? 1 : 1 + Math.min(0.9, Math.max(0, p.faceT)) * 0.28
+    ctx.font = Math.round(22 * fsc) + 'px system-ui,sans-serif'
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+    ctx.fillText(face, cx, p.y - 60)
+    ctx.textBaseline = 'alphabetic'
   }
 
   private drawScene(ctx: CanvasRenderingContext2D): void {

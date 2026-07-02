@@ -61,6 +61,23 @@ export function earnedIds(stats: Stats): string[] {
   return BADGES.filter((b) => meets(stats, b)).map((b) => b.id)
 }
 
+/** 未獲得のうち「あと少しで取れる」バッジを近い順にn個返す（進捗0〜1付き） */
+export function nextBadges(stats: Stats, earned: Set<string>, n = 3): { badge: Badge; frac: number }[] {
+  const out: { badge: Badge; frac: number }[] = []
+  const rec = stats as unknown as Record<string, number>
+  for (const b of BADGES) {
+    if (earned.has(b.id)) continue
+    const v = rec[b.metric]
+    if (typeof v !== 'number') continue
+    let frac = b.op === 'gte' ? (b.value > 0 ? v / b.value : 1) : (v > 0 ? b.value / v : 0)
+    if (!isFinite(frac)) frac = 0
+    frac = Math.max(0, Math.min(0.999, frac))
+    out.push({ badge: b, frac })
+  }
+  out.sort((a, b) => b.frac - a.frac)
+  return out.slice(0, n)
+}
+
 // __BADGES__ 生成データはビルド時に差し込む
 export const BADGES: Badge[] = [
   {"id":"pk-bestScore-50","metric":"bestScore","op":"gte","value":50,"tier":"bronze","name":"はじめての一皿","desc":"1ラウンドで50てんをとろう！","icon":"🍳"},

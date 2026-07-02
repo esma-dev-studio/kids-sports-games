@@ -38,9 +38,10 @@ function blip(freqs: number[], dur: number, type: OscillatorType, gain: number):
   })
 }
 
-// 正しいお皿に入れた
-export function playPlace(): void {
-  blip([784, 1046], 0.12, 'triangle', 0.16)
+// 正しいお皿に入れた。stepが大きいほど1音ずつ高くなる（コンボ音階）
+export function playPlace(step?: number): void {
+  const ratio = step ? Math.pow(2, Math.min(12, Math.max(0, step)) / 12) : 1
+  blip([784 * ratio, 1046 * ratio], 0.12, 'triangle', 0.16)
 }
 // お皿が完成した（できあがり！）
 export function playComplete(): void {
@@ -49,4 +50,8 @@ export function playComplete(): void {
 // まちがえた／落とした
 export function playMiss(): void {
   blip([220, 165], 0.18, 'sawtooth', 0.12)
+}
+// 新記録・新バッジのお祝い（短い上昇ファンファーレ）
+export function playFanfare(): void {
+  blip([523.25, 659.25, 783.99, 1046.5], 0.18, 'triangle', 0.16)
 }

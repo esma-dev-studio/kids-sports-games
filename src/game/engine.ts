@@ -40,6 +40,7 @@ export class SignalGame {
   private gaman = 0
   private lives = LIVES
   private timeLeft = ROUND_TIME
+  private feverTime = 0
 
   private maxCombo = 0
   private maxGaman = 0
@@ -116,7 +117,9 @@ export class SignalGame {
     const n = this.nodes[idx]
     if (this.type === 'go') {
       this.judged = true
-      this.score += 10 + this.combo * 2
+      const feverMul = this.feverTime > 0 ? 2 : 1
+      const gain = (10 + this.combo * 2) * feverMul
+      this.score += gain
       this.combo++
       if (this.combo > this.maxCombo) this.maxCombo = this.combo
       this.goHit++
@@ -125,9 +128,13 @@ export class SignalGame {
       this.burst(n.x, n.y, COL.spark, 14)
       this.burst(n.x, n.y, COL.gold, 6)
       this.ring(n.x, n.y, COL.go)
-      this.floater(n.x, n.y - NODE_R, '+' + (10 + (this.combo - 1) * 2), COL.go)
+      this.floater(n.x, n.y - NODE_R, '+' + gain, COL.go)
       if (this.combo >= 2) this.floater(CX, CY + 58, this.combo + ' COMBO', COL.gold)
-      if (this.opts.sound) playPop()
+      if (this.combo > 0 && this.combo % 10 === 0) {
+        this.feverTime = 3
+        this.floater(CX, CY - 96, 'チャンス！ ×2', COL.gold)
+      }
+      if (this.opts.sound) playPop(this.combo)
       this.phase = 'clear'; this.t = 0
     } else {
       this.judged = true
@@ -242,6 +249,7 @@ export class SignalGame {
     this.ghost.press = Math.max(0, this.ghost.press - dt * 4)
 
     this.flash = Math.max(0, this.flash - dt * 3)
+    this.feverTime = Math.max(0, this.feverTime - dt)
     this.dispScore += (this.score - this.dispScore) * Math.min(1, dt * 8)
 
     for (let i = this.parts.length - 1; i >= 0; i--) {
@@ -276,6 +284,12 @@ export class SignalGame {
   // ---- 描画 ----
   render(ctx: CanvasRenderingContext2D): void {
     this.drawCourt(ctx)
+    if (this.feverTime > 0 && !this.opts.reducedMotion) {
+      ctx.fillStyle = '#1fa88a'
+      ctx.globalAlpha = 0.08
+      ctx.fillRect(0, 0, W, H)
+      ctx.globalAlpha = 1
+    }
     for (let i = 0; i < this.nodes.length; i++) if (i !== this.active) this.drawNode(ctx, this.nodes[i], false)
     if (this.active >= 0) this.drawNode(ctx, this.nodes[this.active], this.phase === 'lit')
     this.drawFx(ctx)
@@ -375,6 +389,10 @@ export class SignalGame {
     ctx.fillText('SCORE', CX, CY - 46)
     ctx.font = 'bold 46px system-ui,sans-serif'; ctx.fillStyle = COL.go
     ctx.fillText(String(Math.round(this.dispScore)), CX, CY - 8)
+    if (this.feverTime > 0) {
+      ctx.font = 'bold 15px system-ui,sans-serif'; ctx.fillStyle = COL.gold
+      ctx.fillText('×2', CX + 84, CY - 46)
+    }
 
     ctx.font = 'bold 16px system-ui,sans-serif'; ctx.fillStyle = COL.ink
     ctx.fillText('COMBO', CX - 58, CY + 38)

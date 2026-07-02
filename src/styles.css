@@ -314,6 +314,44 @@ html, body {
 .badge.got.gold { border-color: #e0a92a; background: #fdf5db; }
 .badge.got.rainbow { border-color: #d24fae; background: linear-gradient(135deg, #fde7f4, #e7f0fd, #e7fdec); }
 
+/* マスコット */
+.mascot { display: flex; align-items: flex-start; gap: 10px; margin: 0 0 12px; text-align: left; }
+.mascot-emoji { font-size: 40px; line-height: 1; flex: none; animation: mascot-bob 1.8s ease-in-out infinite; }
+.mascot-bubble { position: relative; flex: 1; background: #fff; border: 2px solid var(--line); border-radius: 14px; padding: 8px 12px; font-size: 13px; line-height: 1.55; color: var(--ink); }
+.mascot-bubble::before { content: ''; position: absolute; left: -7px; top: 16px; border: 6px solid transparent; border-right-color: #fff; }
+.mascot-name { display: block; font-size: 11px; font-weight: 800; color: var(--go-dark); margin-bottom: 2px; }
+@keyframes mascot-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+
+/* 次のバッジ予告 */
+.next-badges { margin: 12px 0 2px; text-align: left; }
+.nb2-title { margin: 0 0 6px; font-size: 12px; font-weight: 800; color: var(--ink-soft); }
+.nb2-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.nb2-ic { font-size: 22px; width: 26px; text-align: center; flex: none; filter: grayscale(0.3); }
+.nb2-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.nb2-name { font-size: 12px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nb2-bar { height: 6px; background: rgba(15, 47, 40, 0.10); border-radius: 4px; overflow: hidden; }
+.nb2-fill { display: block; height: 100%; background: var(--go); border-radius: 4px; }
+.nb2-pct { font-size: 12px; font-weight: 700; color: var(--go-dark); width: 40px; text-align: right; flex: none; }
+
+/* お祝い紙吹雪 */
+.confetti { position: absolute; inset: 0; overflow: hidden; pointer-events: none; border-radius: 20px; z-index: 5; }
+.cf { position: absolute; top: -14px; width: 9px; height: 14px; border-radius: 2px; opacity: 0.95; animation-name: cf-fall; animation-timing-function: ease-in; animation-iteration-count: 1; animation-fill-mode: forwards; }
+@keyframes cf-fall { 0% { transform: translateY(-20px) rotate(0); opacity: 1; } 100% { transform: translateY(380px) rotate(560deg); opacity: 0; } }
+
+/* タイトル & CTA の軽い演出 */
+.title-pop { animation: title-pop 2.6s ease-in-out infinite; transform-origin: center; }
+@keyframes title-pop { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.03); } }
+.overlay .cta { animation: cta-glow 1.8s ease-in-out infinite; }
+@keyframes cta-glow { 0%, 100% { box-shadow: 0 5px 0 var(--go-dark); } 50% { box-shadow: 0 5px 0 var(--go-dark), 0 0 0 7px rgba(31, 168, 138, 0.16); } }
+
+/* 演出ひかえめ */
+.rm .mascot-emoji, .rm .title-pop, .rm .overlay .cta { animation: none !important; }
+.rm .cf { display: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  .mascot-emoji, .title-pop, .overlay .cta { animation: none !important; }
+  .cf { display: none !important; }
+}
+
 @media (max-width: 480px) {
   .score-row { flex-direction: column; }
   .mode { max-width: none; }
