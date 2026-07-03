@@ -114,7 +114,7 @@ export class KitchenGame {
       this.combo++
       if (this.combo > this.maxCombo) this.maxCombo = this.combo
       this.correct++
-      p.face = this.combo >= 8 ? '🤩' : '😋'; p.faceT = 0.6
+      p.face = this.combo >= 8 ? 'great' : 'happy'; p.faceT = 0.6
       const gain = 10 + this.combo * 2
       this.score += gain
       this.flash = 0.35
@@ -127,7 +127,7 @@ export class KitchenGame {
     } else {
       this.combo = 0
       this.mistakes++
-      p.face = '😲'; p.faceT = 0.6
+      p.face = 'oops'; p.faceT = 0.6
       this.patience = Math.max(0, this.patience - 0.12)
       this.burst(it.x, it.y, '#999', 6)
       this.floater(it.x, it.y - 20, 'ちがう！', '#c0392b')
@@ -138,7 +138,7 @@ export class KitchenGame {
 
   private completePlate(p: Plate): void {
     p.glow = 1
-    p.face = '🤩'; p.faceT = 0.9
+    p.face = 'great'; p.faceT = 0.9
     this.platesDone++
     this.score += 50
     this.flash = 0.6
@@ -392,15 +392,26 @@ export class KitchenGame {
   }
 
   private drawItem(ctx: CanvasRenderingContext2D, it: Item): void {
+    const rm = this.opts.reducedMotion
     const bob = it.state === 'fly' ? Math.sin(this.now * 7 + it.wob) * 3 : 0
     const x = it.x, y = it.y + bob
+    // 落ち影
+    ctx.fillStyle = 'rgba(60,30,10,0.14)'
+    ctx.beginPath(); ctx.ellipse(x, y + it.r * 0.78, it.r * 0.8, it.r * 0.24, 0, 0, 6.28); ctx.fill()
+    // 本体：放射グラデで立体感（held中のみ軽い発光）
     ctx.save()
-    ctx.shadowColor = 'rgba(0,0,0,0.18)'; ctx.shadowBlur = 8; ctx.shadowOffsetY = 4
-    ctx.fillStyle = it.s.light
+    if (it.state === 'held' && !rm) { ctx.shadowColor = it.s.col; ctx.shadowBlur = 12 }
+    const rg = ctx.createRadialGradient(x - it.r * 0.32, y - it.r * 0.38, it.r * 0.15, x, y, it.r)
+    rg.addColorStop(0, '#fff')
+    rg.addColorStop(0.45, it.s.light)
+    rg.addColorStop(1, it.s.col)
+    ctx.fillStyle = rg
     ctx.beginPath(); ctx.arc(x, y, it.r, 0, 6.28); ctx.fill()
     ctx.restore()
-    ctx.strokeStyle = it.s.col; ctx.lineWidth = 4
+    ctx.strokeStyle = it.s.col; ctx.lineWidth = 3
     ctx.beginPath(); ctx.arc(x, y, it.r, 0, 6.28); ctx.stroke()
+    ctx.fillStyle = 'rgba(255,255,255,0.55)'
+    ctx.beginPath(); ctx.arc(x - it.r * 0.34, y - it.r * 0.4, it.r * 0.22, 0, 6.28); ctx.fill()
     this.icon(ctx, it.s.key, x, y - 2, it.r)
     const ey = y - it.r * 0.28
     ctx.fillStyle = '#fff'
@@ -418,60 +429,123 @@ export class KitchenGame {
     ctx.strokeRect(p.x + 4, p.y - 46, p.w - 8, p.h + 50); ctx.setLineDash([])
   }
 
+  // 皿のごきげんフェイス（絵文字を使わず色+形で描画）
+  private drawFace(ctx: CanvasRenderingContext2D, kind: string, x: number, y: number, r: number): void {
+    ctx.save()
+    ctx.translate(x, y)
+    const col = kind === 'oops' ? '#c0392b' : kind === 'great' ? '#e08a1a' : '#7a5230'
+    ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = Math.max(1.6, r * 0.14)
+    ctx.lineCap = 'round'
+    const ex = r * 0.34, ey = -r * 0.08
+    if (kind === 'oops') {
+      // 驚き目（丸）＋小さい◯口
+      ctx.beginPath(); ctx.arc(-ex, ey, r * 0.16, 0, 6.28); ctx.arc(ex, ey, r * 0.16, 0, 6.28); ctx.fill()
+      ctx.beginPath(); ctx.arc(0, r * 0.38, r * 0.16, 0, 6.28); ctx.stroke()
+    } else if (kind === 'great') {
+      // にっこり目（弧）＋大きな笑み
+      ctx.beginPath(); ctx.arc(-ex, ey, r * 0.18, Math.PI * 1.15, Math.PI * 1.85); ctx.stroke()
+      ctx.beginPath(); ctx.arc(ex, ey, r * 0.18, Math.PI * 1.15, Math.PI * 1.85); ctx.stroke()
+      ctx.beginPath(); ctx.arc(0, r * 0.06, r * 0.42, Math.PI * 0.12, Math.PI * 0.88); ctx.stroke()
+    } else if (kind === 'happy') {
+      // 普通の丸目＋微笑み
+      ctx.beginPath(); ctx.arc(-ex, ey, r * 0.11, 0, 6.28); ctx.arc(ex, ey, r * 0.11, 0, 6.28); ctx.fill()
+      ctx.beginPath(); ctx.arc(0, r * 0.02, r * 0.34, Math.PI * 0.18, Math.PI * 0.82); ctx.stroke()
+    } else {
+      // 待機中：ニュートラル
+      ctx.beginPath(); ctx.arc(-ex, ey, r * 0.1, 0, 6.28); ctx.arc(ex, ey, r * 0.1, 0, 6.28); ctx.fill()
+      ctx.beginPath(); ctx.moveTo(-r * 0.2, r * 0.32); ctx.lineTo(r * 0.2, r * 0.32); ctx.stroke()
+    }
+    ctx.restore()
+  }
+
   private drawPlate(ctx: CanvasRenderingContext2D, p: Plate): void {
+    const rm = this.opts.reducedMotion
     const cx = p.x + p.w / 2, cy = p.y + p.h * 0.42
     // 注文カード（必要個数のアイコン）
-    ctx.fillStyle = '#fff'
+    ctx.fillStyle = '#fffaf1'
     this.rr(ctx, cx - 46, p.y - 42, 92, 30, 7); ctx.fill()
-    ctx.strokeStyle = 'rgba(0,0,0,0.12)'; ctx.lineWidth = 1.5
+    ctx.strokeStyle = 'rgba(122,82,48,0.18)'; ctx.lineWidth = 1.5
     this.rr(ctx, cx - 46, p.y - 42, 92, 30, 7); ctx.stroke()
     for (let k = 0; k < p.need; k++) {
       ctx.globalAlpha = k < p.fill ? 1 : 0.28
       this.icon(ctx, p.s.key, cx - 30 + k * 20, p.y - 27, 13)
       ctx.globalAlpha = 1
     }
-    // 皿
-    ctx.fillStyle = 'rgba(0,0,0,0.10)'
-    ctx.beginPath(); ctx.ellipse(cx, p.y + p.h * 0.72, p.w * 0.46, 16, 0, 0, 6.28); ctx.fill()
+    // 皿の落ち影
+    ctx.fillStyle = 'rgba(60,30,10,0.16)'
+    ctx.beginPath(); ctx.ellipse(cx, p.y + p.h * 0.74, p.w * 0.46, 16, 0, 0, 6.28); ctx.fill()
     const pop = 1 + p.shake * 0.05
     ctx.save(); ctx.translate(cx, cy); ctx.scale(pop, pop); ctx.translate(-cx, -cy)
-    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.ellipse(cx, cy, p.w * 0.46, p.h * 0.34, 0, 0, 6.28); ctx.fill()
-    ctx.fillStyle = p.s.light; ctx.beginPath(); ctx.ellipse(cx, cy, p.w * 0.33, p.h * 0.24, 0, 0, 6.28); ctx.fill()
-    ctx.lineWidth = 5; ctx.strokeStyle = p.s.col; ctx.beginPath(); ctx.ellipse(cx, cy, p.w * 0.46, p.h * 0.34, 0, 0, 6.28); ctx.stroke()
+    // 皿本体：放射グラデで陶器の質感
+    const dish = ctx.createRadialGradient(cx - p.w * 0.14, cy - p.h * 0.14, 4, cx, cy, p.w * 0.5)
+    dish.addColorStop(0, '#ffffff')
+    dish.addColorStop(0.62, '#fbf3e6')
+    dish.addColorStop(1, '#e7d9c2')
+    ctx.fillStyle = dish
+    ctx.beginPath(); ctx.ellipse(cx, cy, p.w * 0.46, p.h * 0.34, 0, 0, 6.28); ctx.fill()
+    ctx.strokeStyle = 'rgba(122,82,48,0.25)'; ctx.lineWidth = 1.5
+    ctx.beginPath(); ctx.ellipse(cx, cy, p.w * 0.46, p.h * 0.34, 0, 0, 6.28); ctx.stroke()
+    // 内皿（食材カラー）
+    const inner = ctx.createRadialGradient(cx - p.w * 0.1, cy - p.h * 0.1, 2, cx, cy, p.w * 0.33)
+    inner.addColorStop(0, '#fff')
+    inner.addColorStop(0.5, p.s.light)
+    inner.addColorStop(1, p.s.col)
+    ctx.fillStyle = inner
+    ctx.beginPath(); ctx.ellipse(cx, cy, p.w * 0.33, p.h * 0.24, 0, 0, 6.28); ctx.fill()
+    ctx.lineWidth = 4; ctx.strokeStyle = p.s.col
+    ctx.beginPath(); ctx.ellipse(cx, cy, p.w * 0.46, p.h * 0.34, 0, 0, 6.28); ctx.stroke()
     this.icon(ctx, p.s.key, cx, cy, 20)
     ctx.restore()
     // ゲージ
     const gy = p.y + p.h - 4
-    ctx.fillStyle = 'rgba(0,0,0,0.10)'; this.rr(ctx, p.x + 10, gy, p.w - 20, 10, 5); ctx.fill()
-    ctx.fillStyle = p.s.col
+    ctx.fillStyle = 'rgba(90,55,20,0.14)'; this.rr(ctx, p.x + 10, gy, p.w - 20, 10, 5); ctx.fill()
     const gw = (p.w - 20) * (p.fill / p.need)
-    if (gw > 0) { this.rr(ctx, p.x + 10, gy, gw, 10, 5); ctx.fill() }
-    ctx.fillStyle = '#5b5b5b'; ctx.font = '600 15px system-ui,sans-serif'; ctx.textAlign = 'center'
+    if (gw > 0) {
+      const gg = ctx.createLinearGradient(p.x + 10, 0, p.x + 10 + gw, 0)
+      gg.addColorStop(0, p.s.light); gg.addColorStop(1, p.s.col)
+      ctx.fillStyle = gg
+      this.rr(ctx, p.x + 10, gy, gw, 10, 5); ctx.fill()
+    }
+    ctx.fillStyle = '#6b4a2a'; ctx.font = '600 15px "M PLUS Rounded 1c", system-ui, sans-serif'; ctx.textAlign = 'center'
     ctx.fillText(p.s.name, cx, cy + p.h * 0.5 + 4)
     if (p.glow > 0) {
+      ctx.save()
       ctx.globalAlpha = p.glow
-      ctx.strokeStyle = p.s.col; ctx.lineWidth = 6
+      if (!rm) { ctx.shadowColor = p.s.col; ctx.shadowBlur = 10 }
+      ctx.strokeStyle = p.s.col; ctx.lineWidth = 5
       ctx.beginPath(); ctx.ellipse(cx, cy, p.w * 0.46 + (1 - p.glow) * 40, p.h * 0.34 + (1 - p.glow) * 30, 0, 0, 6.28); ctx.stroke()
-      ctx.globalAlpha = 1
+      ctx.restore()
     }
-    // お皿のごきげんフェイス（通常🙂・反応時に一瞬ぷるん）
-    const face = p.face || '🙂'
-    const fsc = this.opts.reducedMotion ? 1 : 1 + Math.min(0.9, Math.max(0, p.faceT)) * 0.28
-    ctx.font = Math.round(22 * fsc) + 'px system-ui,sans-serif'
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
-    ctx.fillText(face, cx, p.y - 60)
-    ctx.textBaseline = 'alphabetic'
+    // お皿のごきげんフェイス（通常はニュートラル・反応時に一瞬ぷるん）
+    const fsc = rm ? 1 : 1 + Math.min(0.9, Math.max(0, p.faceT)) * 0.28
+    ctx.save()
+    ctx.translate(cx, p.y - 60); ctx.scale(fsc, fsc)
+    this.drawFace(ctx, p.face || 'idle', 0, 0, 20)
+    ctx.restore()
   }
 
   private drawScene(ctx: CanvasRenderingContext2D): void {
-    ctx.fillStyle = '#fdf3e3'; ctx.fillRect(0, 0, W, H)
-    ctx.fillStyle = '#f6e6cf'
+    const rm = this.opts.reducedMotion
+    // 背景：深みのある縦グラデ（暖色のキッチン空気感）
+    const g = ctx.createLinearGradient(0, 0, 0, H)
+    g.addColorStop(0, '#fff2dc'); g.addColorStop(0.5, '#fbe4c2'); g.addColorStop(1, '#f0cf9c')
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H)
+    // 中央付近のやわらかな放射光
+    const glow = ctx.createRadialGradient(W * 0.5, H * 0.34, 30, W * 0.5, H * 0.34, W * 0.62)
+    glow.addColorStop(0, 'rgba(255,255,255,0.42)'); glow.addColorStop(1, 'rgba(255,255,255,0)')
+    ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H)
+    // タイル壁
+    ctx.fillStyle = 'rgba(255,255,255,0.4)'
     for (let y = 0; y < H - 200; y += 52) {
       for (let x = ((y / 52) % 2 === 0 ? 0 : 34); x < W; x += 68) { this.rr(ctx, x + 4, y + 4, 60, 44, 6); ctx.fill() }
     }
-    ctx.fillStyle = '#c98f5a'; ctx.fillRect(0, H - 200, W, 200)
-    ctx.fillStyle = '#b87d47'; ctx.fillRect(0, H - 200, W, 14)
-    if (!this.opts.reducedMotion) {
+    // カウンター（木目の質感・グラデ）
+    const counter = ctx.createLinearGradient(0, H - 200, 0, H)
+    counter.addColorStop(0, '#d9a468'); counter.addColorStop(1, '#b87d47')
+    ctx.fillStyle = counter; ctx.fillRect(0, H - 200, W, 200)
+    ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fillRect(0, H - 200, W, 5)
+    ctx.fillStyle = 'rgba(90,50,15,0.28)'; ctx.fillRect(0, H - 196, W, 6)
+    if (!rm) {
       ctx.fillStyle = 'rgba(255,255,255,0.28)'
       for (let s = 0; s < 4; s++) {
         const wx = 120 + s * 260 + Math.sin(this.now * 1.2 + s) * 20
@@ -493,55 +567,90 @@ export class KitchenGame {
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
     for (const f of this.floaters) {
       ctx.globalAlpha = Math.max(0, Math.min(1, f.life))
-      ctx.fillStyle = f.col; ctx.font = '700 22px system-ui,sans-serif'
+      ctx.fillStyle = f.col; ctx.font = '700 22px "M PLUS Rounded 1c", system-ui, sans-serif'
       ctx.fillText(f.text, f.x, f.y)
     }
     ctx.globalAlpha = 1
   }
 
   private drawGhostHand(ctx: CanvasRenderingContext2D): void {
+    const rm = this.opts.reducedMotion
     const x = this.ghostVisX, y = this.ghostVisY
     ctx.save(); ctx.globalAlpha = 0.9
-    ctx.fillStyle = '#7a5cc0'; ctx.beginPath(); ctx.arc(x, y, 14, 0, 6.28); ctx.fill()
+    if (!rm) { ctx.shadowColor = '#7a5cc0'; ctx.shadowBlur = 10 }
+    const hg = ctx.createRadialGradient(x - 4, y - 5, 2, x, y, 14)
+    hg.addColorStop(0, '#b39ce0'); hg.addColorStop(1, '#7a5cc0')
+    ctx.fillStyle = hg; ctx.beginPath(); ctx.arc(x, y, 14, 0, 6.28); ctx.fill()
     ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x, y, 7, 0, 6.28); ctx.fill()
+    ctx.restore()
     ctx.strokeStyle = 'rgba(122,92,192,0.5)'; ctx.lineWidth = 3
     ctx.beginPath(); ctx.arc(x, y, 20 + Math.sin(this.now * 9) * 3, 0, 6.28); ctx.stroke()
-    ctx.restore()
   }
 
   private drawHUD(ctx: CanvasRenderingContext2D): void {
+    const F = '"M PLUS Rounded 1c", system-ui, sans-serif'
+    const rm = this.opts.reducedMotion
     ctx.textBaseline = 'alphabetic'
-    ctx.fillStyle = 'rgba(255,255,255,0.92)'
-    this.rr(ctx, 18, 16, 196, 54, 12); ctx.fill()
-    ctx.fillStyle = '#7a5230'; ctx.font = '600 14px system-ui,sans-serif'; ctx.textAlign = 'left'
+
+    // スコアカード（グラデ地＋半透明ボーダー）
+    ctx.save()
+    if (!rm) { ctx.shadowColor = 'rgba(90,55,20,0.28)'; ctx.shadowBlur = 14; ctx.shadowOffsetY = 5 }
+    const sc = ctx.createLinearGradient(0, 16, 0, 70)
+    sc.addColorStop(0, 'rgba(255,250,240,0.95)'); sc.addColorStop(1, 'rgba(250,235,210,0.95)')
+    ctx.fillStyle = sc; this.rr(ctx, 18, 16, 196, 54, 12); ctx.fill()
+    ctx.restore()
+    ctx.strokeStyle = 'rgba(122,82,48,0.22)'; ctx.lineWidth = 1; this.rr(ctx, 18, 16, 196, 54, 12); ctx.stroke()
+    ctx.fillStyle = '#8a6238'; ctx.font = '600 14px ' + F; ctx.textAlign = 'left'
     ctx.fillText('スコア', 34, 38)
-    ctx.fillStyle = '#3a2a18'; ctx.font = '700 26px system-ui,sans-serif'
+    ctx.fillStyle = '#3a2a18'; ctx.font = '700 26px ' + F
     ctx.fillText(String(this.score), 34, 62)
     if (this.combo >= 2) {
-      ctx.fillStyle = '#e08a1a'; ctx.font = '700 20px system-ui,sans-serif'; ctx.textAlign = 'right'
+      ctx.fillStyle = '#e08a1a'; ctx.font = '700 20px ' + F; ctx.textAlign = 'right'
       ctx.fillText(this.combo + ' コンボ', 200, 56)
     }
 
     // 右上：がまんメーター＋残り時間
     const mx = W - 266, my = 22, mw = 248, mh = 20
-    ctx.fillStyle = 'rgba(255,255,255,0.92)'; this.rr(ctx, mx - 10, my - 8, mw + 20, mh + 58, 12); ctx.fill()
-    ctx.fillStyle = '#7a5230'; ctx.font = '600 13px system-ui,sans-serif'; ctx.textAlign = 'left'
+    ctx.save()
+    if (!rm) { ctx.shadowColor = 'rgba(90,55,20,0.28)'; ctx.shadowBlur = 14; ctx.shadowOffsetY = 5 }
+    const mc = ctx.createLinearGradient(0, my - 8, 0, my + mh + 50)
+    mc.addColorStop(0, 'rgba(255,250,240,0.95)'); mc.addColorStop(1, 'rgba(250,235,210,0.95)')
+    ctx.fillStyle = mc; this.rr(ctx, mx - 10, my - 8, mw + 20, mh + 58, 12); ctx.fill()
+    ctx.restore()
+    ctx.strokeStyle = 'rgba(122,82,48,0.22)'; ctx.lineWidth = 1
+    this.rr(ctx, mx - 10, my - 8, mw + 20, mh + 58, 12); ctx.stroke()
+    ctx.fillStyle = '#8a6238'; ctx.font = '600 13px ' + F; ctx.textAlign = 'left'
     ctx.fillText('がまんメーター', mx, my + 2)
-    ctx.fillStyle = 'rgba(0,0,0,0.10)'; this.rr(ctx, mx, my + 8, mw, mh, 10); ctx.fill()
-    const pc = this.patience > 0.5 ? '#4caa5a' : this.patience > 0.25 ? '#e0a12a' : '#e5533c'
-    ctx.fillStyle = pc
-    if (this.patience > 0.02) { this.rr(ctx, mx, my + 8, mw * this.patience, mh, 10); ctx.fill() }
+    ctx.fillStyle = 'rgba(90,55,20,0.14)'; this.rr(ctx, mx, my + 8, mw, mh, 10); ctx.fill()
+    const pc0 = this.patience > 0.5 ? '#8fd39c' : this.patience > 0.25 ? '#f2c168' : '#f08a76'
+    const pc1 = this.patience > 0.5 ? '#4caa5a' : this.patience > 0.25 ? '#e0a12a' : '#e5533c'
+    if (this.patience > 0.02) {
+      const pg = ctx.createLinearGradient(mx, 0, mx + mw * this.patience, 0)
+      pg.addColorStop(0, pc0); pg.addColorStop(1, pc1)
+      ctx.fillStyle = pg
+      this.rr(ctx, mx, my + 8, mw * this.patience, mh, 10); ctx.fill()
+    }
 
     if (!this.opts.attract) {
-      ctx.fillStyle = 'rgba(0,0,0,0.10)'; this.rr(ctx, mx, my + 36, mw, 12, 6); ctx.fill()
-      ctx.fillStyle = this.timeLeft > 10 ? '#3d84c6' : '#e5533c'
+      ctx.fillStyle = 'rgba(90,55,20,0.14)'; this.rr(ctx, mx, my + 36, mw, 12, 6); ctx.fill()
       const tw = (mw * this.timeLeft) / ROUND_TIME
-      if (tw > 0) { this.rr(ctx, mx, my + 36, tw, 12, 6); ctx.fill() }
-      ctx.fillStyle = '#7a5230'; ctx.font = '700 12px system-ui,sans-serif'; ctx.textAlign = 'right'
+      if (tw > 0) {
+        const tg = ctx.createLinearGradient(mx, 0, mx + tw, 0)
+        if (this.timeLeft > 10) { tg.addColorStop(0, '#7fb8e8'); tg.addColorStop(1, '#3d84c6') }
+        else { tg.addColorStop(0, '#f08a76'); tg.addColorStop(1, '#e5533c') }
+        ctx.fillStyle = tg
+        this.rr(ctx, mx, my + 36, tw, 12, 6); ctx.fill()
+      }
+      ctx.fillStyle = '#8a6238'; ctx.font = '700 12px ' + F; ctx.textAlign = 'right'
       ctx.fillText(Math.ceil(this.timeLeft) + '秒', mx + mw, my + 2)
     } else {
-      ctx.fillStyle = 'rgba(122,92,192,0.92)'; this.rr(ctx, W / 2 - 70, 16, 140, 30, 15); ctx.fill()
-      ctx.fillStyle = '#fff'; ctx.font = '700 14px system-ui,sans-serif'; ctx.textAlign = 'center'
+      ctx.save()
+      if (!rm) { ctx.shadowColor = 'rgba(122,92,192,0.5)'; ctx.shadowBlur = 10 }
+      const ag = ctx.createLinearGradient(W / 2 - 70, 0, W / 2 + 70, 0)
+      ag.addColorStop(0, '#8f6fd6'); ag.addColorStop(1, '#6a4ab0')
+      ctx.fillStyle = ag; this.rr(ctx, W / 2 - 70, 16, 140, 30, 15); ctx.fill()
+      ctx.restore()
+      ctx.fillStyle = '#fff'; ctx.font = '700 14px ' + F; ctx.textAlign = 'center'
       ctx.fillText('お手本デモ中', W / 2, 36)
     }
     ctx.textAlign = 'left'

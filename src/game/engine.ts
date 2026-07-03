@@ -16,6 +16,19 @@ const COL = {
   ink: '#0f2f28', white: '#ffffff', gold: '#f4b740', spark: '#7fe0c8',
 }
 
+// 描画専用の配色（夜の交差点/信号盤テーマ）。ロジックには一切関与しない。
+const VCOL = {
+  bgTop: '#0d2420', bgMid: '#0a1c1a', bgBottom: '#061210',
+  glow: 'rgba(60,150,130,0.14)',
+  panelTop: 'rgba(18,44,40,0.92)', panelBottom: 'rgba(8,20,18,0.92)',
+  panelBorder: 'rgba(255,255,255,0.12)',
+  idleCore: '#3a4d47', idleRim: '#26362f',
+  goCoreLight: '#c8f7e6', goCoreDark: '#0f6b57',
+  nogoCoreLight: '#ffd9d4', nogoCoreDark: '#8f281f',
+  textSoft: 'rgba(210,232,225,0.75)', textStrong: '#f2fbf7',
+}
+const F = '"M PLUS Rounded 1c", system-ui, sans-serif'
+
 const CX = W * 0.5
 const CY = H * 0.5 + 6
 const RING = 210
@@ -285,8 +298,8 @@ export class SignalGame {
   render(ctx: CanvasRenderingContext2D): void {
     this.drawCourt(ctx)
     if (this.feverTime > 0 && !this.opts.reducedMotion) {
-      ctx.fillStyle = '#1fa88a'
-      ctx.globalAlpha = 0.08
+      ctx.fillStyle = COL.gold
+      ctx.globalAlpha = 0.07
       ctx.fillRect(0, 0, W, H)
       ctx.globalAlpha = 1
     }
@@ -297,7 +310,7 @@ export class SignalGame {
     if (this.opts.attract) this.drawGhost(ctx)
     if (this.flash > 0 && !this.opts.reducedMotion) {
       ctx.fillStyle = this.flashCol
-      ctx.globalAlpha = this.flash * 0.5
+      ctx.globalAlpha = this.flash * 0.45
       ctx.fillRect(0, 0, W, H)
       ctx.globalAlpha = 1
     }
@@ -314,41 +327,76 @@ export class SignalGame {
   }
 
   private drawCourt(ctx: CanvasRenderingContext2D): void {
-    ctx.fillStyle = COL.court
+    // 夜の交差点/信号盤：深みのある縦グラデ＋中央のやわらかな放射光
+    const bg = ctx.createLinearGradient(0, 0, 0, H)
+    bg.addColorStop(0, VCOL.bgTop); bg.addColorStop(0.55, VCOL.bgMid); bg.addColorStop(1, VCOL.bgBottom)
+    ctx.fillStyle = bg
     ctx.fillRect(0, 0, W, H)
-    ctx.strokeStyle = COL.courtLine; ctx.lineWidth = 3
+    const glow = ctx.createRadialGradient(CX, CY, 20, CX, CY, RING + NODE_R + 140)
+    glow.addColorStop(0, VCOL.glow)
+    glow.addColorStop(1, 'rgba(60,150,130,0)')
+    ctx.fillStyle = glow
+    ctx.fillRect(0, 0, W, H)
+
+    ctx.strokeStyle = 'rgba(180,220,205,0.16)'; ctx.lineWidth = 3
     ctx.beginPath(); ctx.arc(CX, CY, RING + NODE_R + 22, 0, Math.PI * 2); ctx.stroke()
-    ctx.strokeStyle = COL.courtRing; ctx.lineWidth = 2
+    ctx.strokeStyle = 'rgba(180,220,205,0.12)'; ctx.lineWidth = 2
     ctx.beginPath(); ctx.arc(CX, CY, RING, 0, Math.PI * 2); ctx.stroke()
+    ctx.strokeStyle = 'rgba(180,220,205,0.14)'
     ctx.setLineDash([6, 10])
     ctx.beginPath(); ctx.arc(CX, CY, RING - NODE_R - 14, 0, Math.PI * 2); ctx.stroke()
     ctx.setLineDash([])
   }
 
   private drawNode(ctx: CanvasRenderingContext2D, n: Node, isActive: boolean): void {
+    const rm = this.opts.reducedMotion
     if (!isActive) {
-      ctx.fillStyle = COL.idle
-      ctx.strokeStyle = COL.idleEdge; ctx.lineWidth = 3
+      // 非アクティブ：控えめな放射グラデで沈んだ質感（発光なし）
+      const ig = ctx.createRadialGradient(n.x - NODE_R * 0.3, n.y - NODE_R * 0.35, NODE_R * 0.1, n.x, n.y, NODE_R)
+      ig.addColorStop(0, VCOL.idleCore)
+      ig.addColorStop(1, VCOL.idleRim)
+      ctx.fillStyle = ig
+      ctx.strokeStyle = 'rgba(180,220,205,0.18)'; ctx.lineWidth = 3
       ctx.beginPath(); ctx.arc(n.x, n.y, NODE_R, 0, Math.PI * 2); ctx.fill(); ctx.stroke()
-      ctx.fillStyle = COL.courtRing
+      ctx.fillStyle = 'rgba(180,220,205,0.14)'
       ctx.beginPath(); ctx.arc(n.x, n.y, NODE_R * 0.32, 0, Math.PI * 2); ctx.fill()
       return
     }
     const prog = this.phase === 'lit' ? this.t / this.litDur : 1
     const pulse = 1 + Math.sin(this.now * 10) * 0.04
-    const halo = this.opts.reducedMotion ? 1.35 : 1.5 + 0.15 * Math.sin(this.now * 8)
-    if (this.type === 'go') {
-      ctx.fillStyle = COL.goGlow
-      ctx.beginPath(); ctx.arc(n.x, n.y, NODE_R * halo, 0, Math.PI * 2); ctx.fill()
-      ctx.fillStyle = COL.go; ctx.strokeStyle = COL.goEdge; ctx.lineWidth = 4
-      ctx.beginPath(); ctx.arc(n.x, n.y, NODE_R * pulse, 0, Math.PI * 2); ctx.fill(); ctx.stroke()
+    const halo = rm ? 1.3 : 1.5 + 0.15 * Math.sin(this.now * 8)
+    const isGo = this.type === 'go'
+    const glowCol = isGo ? COL.goGlow : COL.nogoGlow
+    const edgeCol = isGo ? COL.goEdge : COL.nogoEdge
+    const coreLight = isGo ? VCOL.goCoreLight : VCOL.nogoCoreLight
+    const coreDark = isGo ? VCOL.goCoreDark : VCOL.nogoCoreDark
+
+    // ハロー（アクティブ対象のみ・軽量な単色グラデ、shadowBlurは使わない）
+    ctx.fillStyle = glowCol
+    ctx.beginPath(); ctx.arc(n.x, n.y, NODE_R * halo, 0, Math.PI * 2); ctx.fill()
+
+    // 本体：放射グラデで立体感
+    const bodyR = NODE_R * pulse
+    const rg = ctx.createRadialGradient(n.x - bodyR * 0.32, n.y - bodyR * 0.38, bodyR * 0.15, n.x, n.y, bodyR)
+    rg.addColorStop(0, coreLight)
+    rg.addColorStop(0.55, isGo ? COL.go : COL.nogo)
+    rg.addColorStop(1, coreDark)
+    ctx.save()
+    if (!rm) { ctx.shadowColor = edgeCol; ctx.shadowBlur = 14 }
+    ctx.fillStyle = rg
+    ctx.strokeStyle = edgeCol; ctx.lineWidth = 4
+    ctx.beginPath(); ctx.arc(n.x, n.y, bodyR, 0, Math.PI * 2); ctx.fill(); ctx.stroke()
+    ctx.restore()
+
+    // 小さな白ハイライト（安っぽい絵文字の代わり）
+    ctx.fillStyle = 'rgba(255,255,255,0.55)'
+    ctx.beginPath(); ctx.arc(n.x - bodyR * 0.32, n.y - bodyR * 0.36, bodyR * 0.2, 0, Math.PI * 2); ctx.fill()
+
+    // 形での二重符号化：GO=丸のリング、NOGO=×
+    if (isGo) {
       ctx.strokeStyle = COL.white; ctx.lineWidth = 6; ctx.lineCap = 'round'
       ctx.beginPath(); ctx.arc(n.x, n.y, NODE_R * 0.5, 0, Math.PI * 2); ctx.stroke()
     } else {
-      ctx.fillStyle = COL.nogoGlow
-      ctx.beginPath(); ctx.arc(n.x, n.y, NODE_R * halo, 0, Math.PI * 2); ctx.fill()
-      ctx.fillStyle = COL.nogo; ctx.strokeStyle = COL.nogoEdge; ctx.lineWidth = 4
-      ctx.beginPath(); ctx.arc(n.x, n.y, NODE_R * pulse, 0, Math.PI * 2); ctx.fill(); ctx.stroke()
       ctx.strokeStyle = COL.white; ctx.lineWidth = 7; ctx.lineCap = 'round'
       const d = NODE_R * 0.42
       ctx.beginPath()
@@ -358,7 +406,7 @@ export class SignalGame {
     }
     ctx.lineCap = 'butt'
     if (this.phase === 'lit') {
-      ctx.strokeStyle = this.type === 'go' ? COL.goEdge : COL.nogoEdge
+      ctx.strokeStyle = edgeCol
       ctx.lineWidth = 5
       ctx.beginPath()
       ctx.arc(n.x, n.y, NODE_R + 9, -Math.PI / 2, -Math.PI / 2 + (1 - prog) * Math.PI * 2)
@@ -370,7 +418,7 @@ export class SignalGame {
     if (this.ghost.show <= 0.02) return
     ctx.globalAlpha = this.ghost.show * 0.9
     const pr = 1 - this.ghost.press * 0.25
-    ctx.fillStyle = 'rgba(20,64,54,0.16)'
+    ctx.fillStyle = 'rgba(0,0,0,0.22)'
     ctx.beginPath(); ctx.arc(this.ghost.x, this.ghost.y + 2, 20 * pr, 0, Math.PI * 2); ctx.fill()
     ctx.fillStyle = COL.white; ctx.strokeStyle = COL.goEdge; ctx.lineWidth = 3
     ctx.beginPath(); ctx.arc(this.ghost.x, this.ghost.y, 15 * pr, 0, Math.PI * 2); ctx.fill(); ctx.stroke()
@@ -380,48 +428,70 @@ export class SignalGame {
   }
 
   private drawHUD(ctx: CanvasRenderingContext2D): void {
+    const rm = this.opts.reducedMotion
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
-    ctx.fillStyle = 'rgba(255,255,255,0.72)'
-    this.rr(ctx, CX - 118, CY - 70, 236, 140, 18); ctx.fill()
-    ctx.strokeStyle = COL.courtRing; ctx.lineWidth = 2; this.rr(ctx, CX - 118, CY - 70, 236, 140, 18); ctx.stroke()
 
-    ctx.fillStyle = COL.ink; ctx.font = 'bold 20px system-ui,sans-serif'
+    // 中央スコアカード：グラデ地＋半透明ボーダー
+    const cw = 236, ch = 140, cx0 = CX - cw / 2, cy0 = CY - 70
+    ctx.save()
+    if (!rm) { ctx.shadowColor = 'rgba(0,0,0,0.35)'; ctx.shadowBlur = 18; ctx.shadowOffsetY = 6 }
+    const cardG = ctx.createLinearGradient(0, cy0, 0, cy0 + ch)
+    cardG.addColorStop(0, VCOL.panelTop); cardG.addColorStop(1, VCOL.panelBottom)
+    ctx.fillStyle = cardG
+    this.rr(ctx, cx0, cy0, cw, ch, 18); ctx.fill()
+    ctx.restore()
+    ctx.strokeStyle = VCOL.panelBorder; ctx.lineWidth = 1.5
+    this.rr(ctx, cx0, cy0, cw, ch, 18); ctx.stroke()
+
+    ctx.fillStyle = VCOL.textSoft; ctx.font = '700 18px ' + F
     ctx.fillText('SCORE', CX, CY - 46)
-    ctx.font = 'bold 46px system-ui,sans-serif'; ctx.fillStyle = COL.go
+    ctx.font = '800 44px ' + F; ctx.fillStyle = VCOL.textStrong
     ctx.fillText(String(Math.round(this.dispScore)), CX, CY - 8)
     if (this.feverTime > 0) {
-      ctx.font = 'bold 15px system-ui,sans-serif'; ctx.fillStyle = COL.gold
+      ctx.font = '800 15px ' + F; ctx.fillStyle = COL.gold
       ctx.fillText('×2', CX + 84, CY - 46)
     }
 
-    ctx.font = 'bold 16px system-ui,sans-serif'; ctx.fillStyle = COL.ink
+    ctx.font = '700 15px ' + F; ctx.fillStyle = VCOL.textSoft
     ctx.fillText('COMBO', CX - 58, CY + 38)
     ctx.fillText('がまん', CX + 58, CY + 38)
-    ctx.font = 'bold 26px system-ui,sans-serif'
-    ctx.fillStyle = this.combo > 0 ? COL.gold : COL.idleEdge
+    ctx.font = '800 25px ' + F
+    ctx.fillStyle = this.combo > 0 ? COL.gold : 'rgba(210,232,225,0.35)'
     ctx.fillText('x' + this.combo, CX - 58, CY + 60)
-    ctx.fillStyle = this.gaman > 0 ? COL.nogoEdge : COL.idleEdge
+    ctx.fillStyle = this.gaman > 0 ? '#ff9c90' : 'rgba(210,232,225,0.35)'
     ctx.fillText('x' + this.gaman, CX + 58, CY + 60)
 
     if (!this.opts.attract) {
-      // ライフ
+      // ライフ：色＋形（○の充填/未充填）で区別
       ctx.textAlign = 'left'
       for (let i = 0; i < LIVES; i++) {
-        ctx.fillStyle = i < this.lives ? COL.nogo : COL.idle
+        const on = i < this.lives
+        ctx.save()
+        if (on && !rm) { ctx.shadowColor = COL.nogo; ctx.shadowBlur = 8 }
+        ctx.fillStyle = on ? COL.nogo : 'rgba(210,232,225,0.16)'
         ctx.beginPath(); ctx.arc(44 + i * 34, 44, 13, 0, Math.PI * 2); ctx.fill()
+        ctx.restore()
+        ctx.strokeStyle = on ? COL.nogoEdge : 'rgba(210,232,225,0.22)'
+        ctx.lineWidth = 2
+        ctx.beginPath(); ctx.arc(44 + i * 34, 44, 13, 0, Math.PI * 2); ctx.stroke()
       }
-      // 残り時間バー
-      const bw = 300
-      ctx.fillStyle = 'rgba(15,47,40,0.12)'
-      this.rr(ctx, W - bw - 40, 34, bw, 18, 9); ctx.fill()
-      ctx.fillStyle = this.timeLeft > 8 ? COL.go : COL.nogo
+      // 残り時間バー：グラデ地
+      const bw = 300, bx = W - bw - 40, by = 34
+      ctx.fillStyle = 'rgba(210,232,225,0.14)'
+      this.rr(ctx, bx, by, bw, 18, 9); ctx.fill()
       const w = (bw * this.timeLeft) / ROUND_TIME
-      if (w > 0) { this.rr(ctx, W - bw - 40, 34, w, 18, 9); ctx.fill() }
-      ctx.fillStyle = COL.ink; ctx.font = 'bold 18px system-ui,sans-serif'; ctx.textAlign = 'right'
+      if (w > 0) {
+        const tg = ctx.createLinearGradient(bx, 0, bx + bw, 0)
+        if (this.timeLeft > 8) { tg.addColorStop(0, COL.goEdge); tg.addColorStop(1, COL.go) }
+        else { tg.addColorStop(0, COL.nogoEdge); tg.addColorStop(1, COL.nogo) }
+        ctx.fillStyle = tg
+        this.rr(ctx, bx, by, w, 18, 9); ctx.fill()
+      }
+      ctx.fillStyle = VCOL.textStrong; ctx.font = '700 18px ' + F; ctx.textAlign = 'right'
       ctx.fillText(Math.ceil(this.timeLeft) + '秒', W - 40, 66)
       ctx.textAlign = 'center'
     } else {
-      ctx.fillStyle = 'rgba(15,47,40,0.5)'; ctx.font = 'bold 16px system-ui,sans-serif'
+      ctx.fillStyle = VCOL.textSoft; ctx.font = '800 16px ' + F
       ctx.fillText('お手本デモ再生中', CX, 40)
     }
   }
@@ -442,7 +512,7 @@ export class SignalGame {
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
     for (const f of this.floats) {
       ctx.globalAlpha = Math.max(0, Math.min(1, f.life * 1.4))
-      ctx.font = 'bold 24px system-ui,sans-serif'; ctx.fillStyle = f.col
+      ctx.font = '800 24px ' + F; ctx.fillStyle = f.col
       ctx.fillText(f.text, f.x, f.y)
     }
     ctx.globalAlpha = 1
