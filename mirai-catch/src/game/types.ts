@@ -1,4 +1,4 @@
-export type Mode = 'easy' | 'normal'
+export type Mode = 'easy' | 'normal' | 'hard'
 
 export interface RoundResult {
   score: number

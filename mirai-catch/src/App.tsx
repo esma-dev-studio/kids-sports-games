@@ -7,7 +7,7 @@ import { addScore, load, qualifies, RANK_MAX, save, type SaveData, type ScoreEnt
 import { BADGES, accumulate, earnedIds, nextBadges, type Badge } from './game/badges'
 
 type Screen = 'menu' | 'tutorial' | 'playing' | 'result' | 'ranking' | 'badges'
-const MODES: Mode[] = ['easy', 'normal']
+const MODES: Mode[] = ['easy', 'normal', 'hard']
 
 const MASCOT = { name: 'サッキー', emoji: '🦉' }
 const SPEECH = {
@@ -197,7 +197,7 @@ export default function App() {
                 <li>ボールの<b>これから通る場所</b>へ、キャッチャーを<b>先回り</b>させよう（ドラッグ／なぞる）。</li>
                 <li>早く正しい場所に着けると「<b>はやよみ！</b>」で高得点。カーブ球に注意！</li>
               </ol>
-              <p className="panel-sub">やさしいはミスしても大丈夫。ふつうはライフ3・40秒。10コンボで「チャンス（2倍）」！</p>
+              <p className="panel-sub">やさしい/むずかしいはミスしても大丈夫。ふつうはライフ3・40秒。<b>むずかしいは球が同時に2〜3個・速さもバラバラ！</b>どれを先に止めるか えらんで、40秒でたくさんキャッチ。10コンボで「チャンス（2倍）」！</p>
               <button className="cta" onClick={onTutorialDone}>わかった！</button>
             </div>
           </div>

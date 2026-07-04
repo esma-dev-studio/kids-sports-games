@@ -24,7 +24,7 @@ export class MiraiGame {
   private opts: EngineOpts
   private diff = DIFF.easy
   private pad = { x: PAD_X, y: H / 2, ty: H / 2, w: 24, h: 120 }
-  private ball: Ball | null = null
+  private active: Ball[] = []
 
   private score = 0
   private dispScore = 0
@@ -94,13 +94,12 @@ export class MiraiGame {
       }
       if (!ok) { curve = false; curveA = 0 }
     }
-    this.ball = {
+    this.active.push({
       x: sx, y: sy, vx, vy, r: 15,
       curve, curveA, curveApplied: false, age: 0,
       ghostT: this.diff.ghostTime, trail: [], color: curve ? COL.curve : COL.go, done: false,
-    }
+    })
     this.balls++
-    this.settled = 0
   }
 
   private simPath(sx: number, sy: number, vx0: number, vy0: number, curveA: number): { reached: boolean; crossY: number; minY: number; maxY: number } {
@@ -123,10 +122,9 @@ export class MiraiGame {
     return { reached: false, crossY: y, minY, maxY }
   }
 
-  private futureY(): number {
+  private futureYOf(b: Ball): number {
     // ball が PAD_X 平面に達するときの y を予測
-    const b = this.ball
-    if (!b || b.vx >= 0) return b ? b.y : H / 2
+    if (b.vx >= 0) return b.y
     const tHit = (PAD_X - b.x) / b.vx
     if (tHit <= 0) return b.y
     const steps = Math.max(1, Math.floor(tHit / 0.016))
@@ -144,6 +142,17 @@ export class MiraiGame {
     return y
   }
 
+  // 一番早く PAD_X に到達する球（＝優先して先回りすべき球）。自動デモの追従に使う。
+  private soonestBall(): Ball | null {
+    let best: Ball | null = null, bestT = Infinity
+    for (const b of this.active) {
+      if (b.done || b.vx >= 0) continue
+      const t = (PAD_X - b.x) / b.vx
+      if (t > 0 && t < bestT) { bestT = t; best = b }
+    }
+    return best
+  }
+
   private burst(x: number, y: number, col: string, count: number): void {
     const n = this.opts.reducedMotion ? Math.ceil(count * 0.4) : count
     for (let i = 0; i < n; i++) {
@@ -154,8 +163,7 @@ export class MiraiGame {
   private ring(x: number, y: number, col: string): void { this.rings.push({ x, y, t: 0, life: 0.32, col }) }
   private floater(x: number, y: number, text: string, col: string): void { this.floats.push({ x, y, text, life: 1, col }) }
 
-  private intercept(early: boolean): void {
-    const b = this.ball!
+  private intercept(b: Ball, early: boolean): void {
     const mult = this.feverTime > 0 ? 2 : 1
     const base = (early ? 150 : 100) + this.combo * 2
     const gain = base * mult
@@ -174,8 +182,7 @@ export class MiraiGame {
     b.done = true
   }
 
-  private concede(): void {
-    const b = this.ball!
+  private concede(b: Ball): void {
     this.combo = 0
     this.conceded++
     this.burst(GOAL_X, b.y, COL.miss, 12)
@@ -238,12 +245,18 @@ export class MiraiGame {
     if (this.opts.attract && !this.auto && this.now - this.lastInput > 3.2) this.auto = true
     this.feverTime = Math.max(0, this.feverTime - dt)
 
-    // 出題
-    if (!this.ball) {
+    // 出題（同時に diff.maxBalls 個まで。複数モードは間隔を詰める）
+    if (this.active.length < this.diff.maxBalls) {
       this.spawnTimer -= dt
-      if (this.spawnTimer <= 0) { this.spawnBall(); this.spawnTimer = this.rnd(0.5, 0.9) }
-    } else {
-      const b = this.ball
+      if (this.spawnTimer <= 0) {
+        this.spawnBall()
+        this.spawnTimer = this.diff.maxBalls > 1 ? this.rnd(0.35, 0.7) : this.rnd(0.5, 0.9)
+      }
+    }
+    // 各ボールを更新（後ろから走査して安全に削除）
+    for (let i = this.active.length - 1; i >= 0; i--) {
+      if (this.ended) break
+      const b = this.active[i]
       b.age += dt
       if (b.curve && !b.curveApplied && b.age > 0.34) {
         const sp = Math.sqrt(b.vx * b.vx + b.vy * b.vy)
@@ -255,21 +268,17 @@ export class MiraiGame {
       b.ghostT -= dt
       b.trail.push({ x: b.x, y: b.y })
       if (b.trail.length > 10) b.trail.shift()
-      if (b.y < -40 || b.y > H + 40) { this.balls--; this.ball = null }
-      else {
-        // パッド平面を横切ったか
-        if (prevX > PAD_X && b.x <= PAD_X) {
-          if (Math.abs(b.y - this.pad.y) < this.pad.h / 2 + b.r) {
-            this.intercept(this.settled > 0.22)
-          }
-        }
-        if (b.x <= GOAL_X + b.r && !b.done) this.concede()
-        if (b.done) this.ball = null
+      if (b.y < -40 || b.y > H + 40) { this.balls--; this.active.splice(i, 1); continue }
+      // パッド平面を横切ったか
+      if (prevX > PAD_X && b.x <= PAD_X && !b.done) {
+        if (Math.abs(b.y - this.pad.y) < this.pad.h / 2 + b.r) this.intercept(b, this.settled > 0.22)
       }
+      if (b.x <= GOAL_X + b.r && !b.done) this.concede(b)
+      if (b.done) this.active.splice(i, 1)
     }
 
-    // パッド移動（速度上限＝先回りが要る）。attractは未来位置へ。
-    if (this.auto) this.pad.ty = this.futureY()
+    // パッド移動（速度上限＝先回りが要る）。attractは「一番早く着く球」の未来位置へ。
+    if (this.auto) { const s = this.soonestBall(); if (s) this.pad.ty = this.futureYOf(s) }
     const dy = this.pad.ty - this.pad.y
     const maxStep = this.diff.padSpeed * dt
     const step = this.clamp(dy, -maxStep, maxStep)
@@ -326,46 +335,7 @@ export class MiraiGame {
     }
     ctx.globalAlpha = 1
 
-    const b = this.ball
-    if (b) {
-      // 予測ゴースト（着地点マーカー付き）
-      if (b.ghostT > 0) {
-        const ga = this.clamp(b.ghostT / this.diff.ghostTime, 0, 1) * 0.8
-        const fy = this.futureY()
-        ctx.strokeStyle = 'rgba(185,228,255,' + (ga * 0.7) + ')'; ctx.setLineDash([6, 8]); ctx.lineWidth = 2.5
-        ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.lineTo(PAD_X, fy); ctx.stroke(); ctx.setLineDash([])
-        ctx.fillStyle = 'rgba(185,228,255,' + (ga * 0.2) + ')'
-        ctx.beginPath(); ctx.arc(PAD_X, fy, b.r + 5, 0, Math.PI * 2); ctx.fill()
-        ctx.strokeStyle = 'rgba(185,228,255,' + (ga * 0.85) + ')'; ctx.lineWidth = 2
-        ctx.beginPath(); ctx.arc(PAD_X, fy, b.r + 5, 0, Math.PI * 2); ctx.stroke()
-      }
-      // トレイル
-      for (let t = 0; t < b.trail.length; t++) {
-        const tr = b.trail[t], ta = (t / b.trail.length) * 0.45
-        ctx.fillStyle = 'rgba(' + (b.curve ? '255,150,80' : '90,200,255') + ',' + ta + ')'
-        ctx.beginPath(); ctx.arc(tr.x, tr.y, b.r * (0.35 + (t / b.trail.length) * 0.55), 0, Math.PI * 2); ctx.fill()
-      }
-      // 本体（放射グラデ＋発光）
-      ctx.save()
-      if (!rm) { ctx.shadowColor = b.color; ctx.shadowBlur = 18 }
-      const rg = ctx.createRadialGradient(b.x - b.r * 0.34, b.y - b.r * 0.4, b.r * 0.2, b.x, b.y, b.r)
-      rg.addColorStop(0, b.curve ? '#ffe2c6' : '#dcf3ff')
-      rg.addColorStop(0.5, b.color)
-      rg.addColorStop(1, b.curve ? '#d75f1e' : '#1a75bd')
-      ctx.fillStyle = rg
-      ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill()
-      ctx.restore()
-      ctx.fillStyle = 'rgba(255,255,255,0.9)'
-      ctx.beginPath(); ctx.arc(b.x - b.r * 0.32, b.y - b.r * 0.36, b.r * 0.24, 0, Math.PI * 2); ctx.fill()
-      // カーブ球：回転する弧で表現（↺テキストは廃止）
-      if (b.curve) {
-        const dir = b.curveA < 0 ? -1 : 1
-        const a0 = (rm ? 0.6 : this.now * 5) * dir
-        ctx.strokeStyle = 'rgba(255,255,255,0.92)'; ctx.lineWidth = 2.4; ctx.lineCap = 'round'
-        ctx.beginPath(); ctx.arc(b.x, b.y, b.r + 4, a0, a0 + Math.PI * 1.25); ctx.stroke()
-        ctx.lineCap = 'butt'
-      }
-    }
+    for (const b of this.active) this.drawBall(ctx, b, rm)
 
     // パッド（キャッチャー）：グラデ＋発光＋中央コア（色で自動/プレイヤーを区別）
     const px = this.pad.x, py = this.pad.y, pw = this.pad.w, ph = this.pad.h
@@ -398,6 +368,46 @@ export class MiraiGame {
     ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath()
   }
 
+  private drawBall(ctx: CanvasRenderingContext2D, b: Ball, rm: boolean): void {
+    // 予測ゴースト（着地点マーカー付き）
+    if (b.ghostT > 0) {
+      const ga = this.clamp(b.ghostT / this.diff.ghostTime, 0, 1) * 0.8
+      const fy = this.futureYOf(b)
+      ctx.strokeStyle = 'rgba(185,228,255,' + (ga * 0.7) + ')'; ctx.setLineDash([6, 8]); ctx.lineWidth = 2.5
+      ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.lineTo(PAD_X, fy); ctx.stroke(); ctx.setLineDash([])
+      ctx.fillStyle = 'rgba(185,228,255,' + (ga * 0.2) + ')'
+      ctx.beginPath(); ctx.arc(PAD_X, fy, b.r + 5, 0, Math.PI * 2); ctx.fill()
+      ctx.strokeStyle = 'rgba(185,228,255,' + (ga * 0.85) + ')'; ctx.lineWidth = 2
+      ctx.beginPath(); ctx.arc(PAD_X, fy, b.r + 5, 0, Math.PI * 2); ctx.stroke()
+    }
+    // トレイル
+    for (let t = 0; t < b.trail.length; t++) {
+      const tr = b.trail[t], ta = (t / b.trail.length) * 0.45
+      ctx.fillStyle = 'rgba(' + (b.curve ? '255,150,80' : '90,200,255') + ',' + ta + ')'
+      ctx.beginPath(); ctx.arc(tr.x, tr.y, b.r * (0.35 + (t / b.trail.length) * 0.55), 0, Math.PI * 2); ctx.fill()
+    }
+    // 本体（放射グラデ＋発光）
+    ctx.save()
+    if (!rm) { ctx.shadowColor = b.color; ctx.shadowBlur = 18 }
+    const rg = ctx.createRadialGradient(b.x - b.r * 0.34, b.y - b.r * 0.4, b.r * 0.2, b.x, b.y, b.r)
+    rg.addColorStop(0, b.curve ? '#ffe2c6' : '#dcf3ff')
+    rg.addColorStop(0.5, b.color)
+    rg.addColorStop(1, b.curve ? '#d75f1e' : '#1a75bd')
+    ctx.fillStyle = rg
+    ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill()
+    ctx.restore()
+    ctx.fillStyle = 'rgba(255,255,255,0.9)'
+    ctx.beginPath(); ctx.arc(b.x - b.r * 0.32, b.y - b.r * 0.36, b.r * 0.24, 0, Math.PI * 2); ctx.fill()
+    // カーブ球：回転する弧で表現（↺テキストは廃止）
+    if (b.curve) {
+      const dir = b.curveA < 0 ? -1 : 1
+      const a0 = (rm ? 0.6 : this.now * 5) * dir
+      ctx.strokeStyle = 'rgba(255,255,255,0.92)'; ctx.lineWidth = 2.4; ctx.lineCap = 'round'
+      ctx.beginPath(); ctx.arc(b.x, b.y, b.r + 4, a0, a0 + Math.PI * 1.25); ctx.stroke()
+      ctx.lineCap = 'butt'
+    }
+  }
+
   private drawHUD(ctx: CanvasRenderingContext2D): void {
     const F = '"M PLUS Rounded 1c", system-ui, sans-serif'
     const rm = this.opts.reducedMotion
@@ -427,7 +437,8 @@ export class MiraiGame {
           ctx.restore()
         }
       } else {
-        ctx.fillStyle = 'rgba(150,255,200,0.9)'; ctx.font = '700 14px ' + F; ctx.fillText('やさしい：ミスしても だいじょうぶ', W - 30, 46)
+        const noFailMsg = this.opts.mode === 'hard' ? 'むずかしい：同時に2〜3個！ どれを先に止める？' : 'やさしい：ミスしても だいじょうぶ'
+        ctx.fillStyle = 'rgba(150,255,200,0.9)'; ctx.font = '700 14px ' + F; ctx.fillText(noFailMsg, W - 30, 46)
       }
       // 残り時間バー
       const bw = 300, bx = W - bw - 40, by = 62
