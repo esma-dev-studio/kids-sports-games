@@ -234,7 +234,8 @@ export class MiraiGame {
       this.timeLeft -= dt
       if (this.timeLeft <= 0) { this.timeLeft = 0; this.finish(); return }
     }
-    if (!this.auto && this.now - this.lastInput > 3.2) this.auto = true
+    // お手本デモ(attract)のときだけ、無操作が続いたら自動操作へ戻す。本番プレイでは自動操作しない。
+    if (this.opts.attract && !this.auto && this.now - this.lastInput > 3.2) this.auto = true
     this.feverTime = Math.max(0, this.feverTime - dt)
 
     // 出題
