@@ -60,11 +60,20 @@ export function GameCanvas({ mode, reducedMotion, sound, attract, onEnd }: Props
       game.pointerMove(x, y)
     }
     const onUp = () => game.pointerUp()
+    // キーボード操作：数字キー(1〜)で、その順位のお皿（左→右）へ食材を自動で送る
+    const onKey = (e: KeyboardEvent) => {
+      const n = Number(e.key)
+      if (Number.isInteger(n) && n >= 1 && n <= 9) {
+        e.preventDefault()
+        game.sendByKey(n - 1)
+      }
+    }
 
     canvas.addEventListener('pointerdown', onDown)
     canvas.addEventListener('pointermove', onMove)
     canvas.addEventListener('pointerup', onUp)
     canvas.addEventListener('pointercancel', onUp)
+    canvas.addEventListener('keydown', onKey)
 
     return () => {
       cancelAnimationFrame(raf)
@@ -72,6 +81,7 @@ export function GameCanvas({ mode, reducedMotion, sound, attract, onEnd }: Props
       canvas.removeEventListener('pointermove', onMove)
       canvas.removeEventListener('pointerup', onUp)
       canvas.removeEventListener('pointercancel', onUp)
+      canvas.removeEventListener('keydown', onKey)
     }
   }, [mode, reducedMotion, sound, attract])
 
@@ -82,6 +92,7 @@ export function GameCanvas({ mode, reducedMotion, sound, attract, onEnd }: Props
       height={H}
       className="game-canvas"
       aria-label="パニックキッチンのゲーム画面"
+      tabIndex={attract ? -1 : 0}
     />
   )
 }

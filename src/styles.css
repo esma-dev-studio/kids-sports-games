@@ -68,6 +68,26 @@ html, body {
   display: block;
   touch-action: none;
 }
+.game-canvas:focus-visible {
+  outline: 3px solid #f4b740;
+  outline-offset: -3px;
+}
+
+.practice-caption {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: rgba(8, 20, 18, 0.55);
+  color: #f2fbf7;
+  font-size: 13px;
+  font-weight: 700;
+  pointer-events: none;
+  z-index: 5;
+}
 
 .overlay {
   position: fixed;
@@ -208,6 +228,19 @@ html, body {
 }
 .metric-label { font-size: 13px; color: var(--ink-soft); font-weight: 700; }
 .metric-sub { font-size: 11px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+
+.spark {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: center;
+  margin: 2px 0 8px;
+  padding: 8px 12px;
+  background: var(--card-2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.spark-msg { font-size: 12.5px; font-weight: 700; color: var(--go-dark); }
 
 .stars { font-size: 23px; letter-spacing: 3px; }
 .stars .star { color: #cfe0da; }

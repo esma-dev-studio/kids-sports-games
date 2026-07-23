@@ -43,8 +43,9 @@ export function playPop(step?: number): void {
   const ratio = step ? Math.pow(2, Math.min(12, Math.max(0, step)) / 12) : 1
   blip([660 * ratio, 990 * ratio], 0.14, 'triangle', 0.18)
 }
-// ニセ光を我慢できた（見きわめ成功）— 静かな肯定
-export function playGaman(): void {
+// ニセ光を我慢できた（見きわめ成功）— 静かな肯定。chord=trueで「見きわめタイム」突入の三度和音に増強
+export function playGaman(chord?: boolean): void {
+  if (chord) { blip([523.25, 659.25, 783.99], 0.26, 'triangle', 0.14); return }
   blip([523.25], 0.22, 'sine', 0.1)
 }
 // ニセ光に触ってしまった（ミス）

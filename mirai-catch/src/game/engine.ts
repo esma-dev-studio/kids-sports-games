@@ -1,5 +1,5 @@
 import type { EngineOpts, RoundResult } from './types'
-import { DIFF, GOAL_X, H, ROUND_TIME, W } from './config'
+import { DDA_MAX, DIFF, GOAL_X, H, ROUND_TIME, W } from './config'
 import { playCatch, playEarly, playMiss } from './audio'
 import { load, save } from './storage'
 
@@ -23,7 +23,7 @@ const COL = {
 export class MiraiGame {
   private opts: EngineOpts
   private diff = DIFF.easy
-  private pad = { x: PAD_X, y: H / 2, ty: H / 2, w: 24, h: 120 }
+  private pad = { x: PAD_X, y: H / 2, ty: H / 2, w: 24, h: 120, popT: 0 }
   private active: Ball[] = []
 
   private score = 0
@@ -55,6 +55,14 @@ export class MiraiGame {
   private lastInput = -999
   private auto: boolean
 
+  // DDA（直近の成否で speed/ghost/間隔を微調整）
+  private perf: number[] = []
+
+  // さわって覚えるガイドつきチュートリアル（1球・超低速）
+  private guided: boolean
+  private guideCaught = false
+  private guideCaughtAt = 0
+
   constructor(opts: EngineOpts) {
     this.opts = opts
     this.diff = DIFF[opts.mode]
@@ -62,16 +70,33 @@ export class MiraiGame {
     this.pad.h = this.diff.padH
     this.lives = this.diff.lives
     this.auto = opts.attract
+    this.guided = !!opts.guided
   }
 
   private rnd(a: number, b: number) { return a + Math.random() * (b - a) }
   private clamp(v: number, a: number, b: number) { return v < a ? a : v > b ? b : v }
 
+  // 直近8球の成否（1=とれた/0=のがした）からDDA補正係数（-DDA_MAX〜+DDA_MAX）を出す。
+  // 好調なら＋（速く/ゴースト短く/間隔せまく）、不調なら－（逆）。attractでは常に0。
+  // lives制（normal）は理不尽な連続失敗を避けたいので変化をゆるやかにする。
+  private ddaFactor(): number {
+    if (this.opts.attract || this.guided || this.perf.length < 3) return 0
+    const avg = this.perf.reduce((a, b) => a + b, 0) / this.perf.length
+    let f = this.clamp((avg - 0.6) * 0.9, -DDA_MAX, DDA_MAX)
+    if (this.opts.mode === 'normal') f *= 0.55
+    return f
+  }
+  private pushPerf(v: number): void {
+    this.perf.push(v)
+    if (this.perf.length > 8) this.perf.shift()
+  }
+
   private spawnBall(): void {
     const top = Math.random() < 0.35
     // 終盤ほど速く（本番のみ）。attractは一定。
     const ramp = this.opts.attract ? 1 : 1 + Math.min(0.35, ((ROUND_TIME - this.timeLeft) / ROUND_TIME) * 0.35)
-    const speed = this.rnd(this.diff.speedMin, this.diff.speedMax) * ramp
+    const dda = this.ddaFactor()
+    const speed = this.rnd(this.diff.speedMin, this.diff.speedMax) * ramp * (1 + dda)
     // 望ましいキャッチ位置（PAD_X 平面での通過 y）＝必ずパッドが届く範囲。
     const catchY = this.rnd(PAD_MINY + 30, PAD_MAXY - 30)
     let sx: number, sy: number
@@ -94,10 +119,22 @@ export class MiraiGame {
       }
       if (!ok) { curve = false; curveA = 0 }
     }
+    const ghostTime = Math.max(0.12, this.diff.ghostTime * (1 - dda))
     this.active.push({
       x: sx, y: sy, vx, vy, r: 15,
       curve, curveA, curveApplied: false, age: 0,
-      ghostT: this.diff.ghostTime, trail: [], color: curve ? COL.curve : COL.go, done: false,
+      ghostT: ghostTime, trail: [], color: curve ? COL.curve : COL.go, done: false,
+    })
+    this.balls++
+  }
+
+  // さわって覚えるガイド：1球・超低速・水平・かならず届く高さでゆっくり流れてくる。
+  private spawnGuidedBall(): void {
+    const sy = this.rnd(PAD_MINY + 60, PAD_MAXY - 60)
+    this.active.push({
+      x: W - 14, y: sy, vx: -120, vy: 0, r: 15,
+      curve: false, curveA: 0, curveApplied: true, age: 0,
+      ghostT: 999, trail: [], color: COL.go, done: false,
     })
     this.balls++
   }
@@ -177,14 +214,29 @@ export class MiraiGame {
     this.burst(b.x, b.y, b.color, early ? 22 : 14)
     this.ring(this.pad.x, this.pad.y, early ? COL.good : COL.go)
     this.floater(this.pad.x + 30, this.pad.y - 34, early ? 'ズバリ！+' + gain : 'ナイス読み！+' + gain, early ? COL.gold : COL.good)
-    if (this.combo > 0 && this.combo % 10 === 0) { this.feverTime = 3; this.floater(W / 2, 120, 'チャンス！ ×2', COL.gold) }
+    this.pad.popT = 1 // キャッチした瞬間のパッド「ポップ」演出
+    if (!this.guided) this.pushPerf(1)
+    if (this.combo > 0 && this.combo % 10 === 0) { this.feverTime = 3; this.floater(W / 2, 116, '🦉 チャンス！ ×2', COL.gold) }
+    else if (this.combo > 0 && this.combo % 5 === 0) {
+      const lines = ['🦉 いいね！', '🦉 のってきた！', '🦉 そのちょうし！']
+      this.floater(W / 2, 116, lines[Math.floor(this.combo / 5) % lines.length], COL.ink)
+    }
     if (this.opts.sound) { if (early) playEarly(); else playCatch(this.combo) }
     b.done = true
+    if (this.guided) { this.guideCaught = true; this.guideCaughtAt = this.now }
   }
 
   private concede(b: Ball): void {
     this.combo = 0
+    if (this.guided) {
+      // ガイド中は失敗しても叱らない・ライフも減らさない。もう一度おだやかに流す。
+      b.done = true
+      this.spawnTimer = 0.6 // 次のガイド球をすぐに再送出する
+      this.floater(GOAL_X + 70, b.y - 24, 'もういちど、いくよ！', COL.miss)
+      return
+    }
     this.conceded++
+    this.pushPerf(0)
     this.burst(GOAL_X, b.y, COL.miss, 12)
     this.ring(GOAL_X + 20, b.y, COL.miss)
     if (this.diff.lives > 0) {
@@ -211,15 +263,20 @@ export class MiraiGame {
     else if (accRate >= 0.55) accuracyStars = 2
 
     const data = load()
-    const isBestScore = this.score > data.best.score
-    data.best = {
-      score: Math.max(data.best.score, this.score),
-      combo: Math.max(data.best.combo, this.maxCombo),
-      early: Math.max(data.best.early, this.earlyIntercepts),
+    const modeBest = data.bestByMode[this.opts.mode]
+    const isBestScore = this.score > modeBest.score
+    data.bestByMode = {
+      ...data.bestByMode,
+      [this.opts.mode]: {
+        score: Math.max(modeBest.score, this.score),
+        combo: Math.max(modeBest.combo, this.maxCombo),
+        early: Math.max(modeBest.early, this.earlyIntercepts),
+      },
     }
     save(data)
 
     const result: RoundResult = {
+      mode: this.opts.mode,
       score: this.score, maxCombo: this.maxCombo, intercepts: this.intercepts, balls: this.balls,
       earlyIntercepts: this.earlyIntercepts, curveIntercepts: this.curveIntercepts, conceded: this.conceded,
       predictStars, accuracyStars, isBestScore,
@@ -233,26 +290,48 @@ export class MiraiGame {
     this.auto = false
   }
   pointerDown(x: number, y: number): void { this.pointerMove(x, y) }
+  // キーボード操作用：現在のねらい位置を dy だけ動かす（padSpeedの上限は update() 側で効く）。
+  moveBy(dy: number): void {
+    this.pad.ty = this.clamp(this.pad.ty + dy, PAD_MINY, PAD_MAXY)
+    this.lastInput = this.now
+    this.auto = false
+  }
 
   update(dt: number): void {
     if (this.ended) return
     this.now += dt
-    if (!this.opts.attract) {
+    if (!this.opts.attract && !this.guided) {
       this.timeLeft -= dt
       if (this.timeLeft <= 0) { this.timeLeft = 0; this.finish(); return }
+    }
+    // ガイド中、1球キャッチしてから少し余韻をおいて呼び出し元へ通知する。
+    if (this.guided && this.guideCaught && this.now - this.guideCaughtAt > 0.55) {
+      this.ended = true
+      this.opts.onGuideDone?.()
+      return
     }
     // お手本デモ(attract)のときだけ、無操作が続いたら自動操作へ戻す。本番プレイでは自動操作しない。
     if (this.opts.attract && !this.auto && this.now - this.lastInput > 3.2) this.auto = true
     this.feverTime = Math.max(0, this.feverTime - dt)
 
-    // 出題（同時に diff.maxBalls 個まで。複数モードは間隔を詰める）
-    if (this.active.length < this.diff.maxBalls) {
+    // 出題
+    if (this.guided) {
+      if (this.active.length === 0 && !this.guideCaught) {
+        this.spawnTimer -= dt
+        if (this.spawnTimer <= 0) { this.spawnGuidedBall(); this.spawnTimer = 999 }
+      }
+    } else if (this.active.length < this.diff.maxBalls) {
+      // 同時に diff.maxBalls 個まで。複数モードは間隔を詰める。DDA好調時はさらに間隔をつめる。
       this.spawnTimer -= dt
       if (this.spawnTimer <= 0) {
         this.spawnBall()
-        this.spawnTimer = this.diff.maxBalls > 1 ? this.rnd(0.35, 0.7) : this.rnd(0.5, 0.9)
+        const dda = this.ddaFactor()
+        const base = this.diff.maxBalls > 1 ? [0.35, 0.7] : [0.5, 0.9]
+        this.spawnTimer = this.rnd(base[0], base[1]) * (1 - dda * 0.5)
       }
     }
+    // かくれんぼゾーンが有効か（フィーバー中は解除＝全部見えるごほうび）
+    const occludeOn = !this.guided && this.feverTime <= 0 && this.diff.occludeHi > this.diff.occludeLo
     // 各ボールを更新（後ろから走査して安全に削除）
     for (let i = this.active.length - 1; i >= 0; i--) {
       if (this.ended) break
@@ -266,12 +345,18 @@ export class MiraiGame {
       const prevX = b.x
       b.x += b.vx * dt; b.y += b.vy * dt
       b.ghostT -= dt
-      b.trail.push({ x: b.x, y: b.y })
-      if (b.trail.length > 10) b.trail.shift()
+      const hidden = occludeOn && b.x <= this.diff.occludeHi && b.x >= this.diff.occludeLo
+      if (hidden) {
+        b.ghostT = 0 // 隠れる直前にゴーストを切る（隠れてからも見えたら答えを見せてしまうため）
+      } else {
+        b.trail.push({ x: b.x, y: b.y })
+        if (b.trail.length > 10) b.trail.shift()
+      }
       if (b.y < -40 || b.y > H + 40) { this.balls--; this.active.splice(i, 1); continue }
       // パッド平面を横切ったか
+      const tol = this.guided ? this.pad.h / 2 + b.r + 44 : this.pad.h / 2 + b.r
       if (prevX > PAD_X && b.x <= PAD_X && !b.done) {
-        if (Math.abs(b.y - this.pad.y) < this.pad.h / 2 + b.r) this.intercept(b, this.settled > 0.22)
+        if (Math.abs(b.y - this.pad.y) < tol) this.intercept(b, this.settled > 0.22)
       }
       if (b.x <= GOAL_X + b.r && !b.done) this.concede(b)
       if (b.done) this.active.splice(i, 1)
@@ -286,6 +371,7 @@ export class MiraiGame {
     this.pad.y = this.clamp(this.pad.y, PAD_MINY, PAD_MAXY)
     if (Math.abs(step) < maxStep * 0.25 && Math.abs(dy) < 8) this.settled += dt
     else this.settled = 0
+    this.pad.popT = Math.max(0, this.pad.popT - dt * 6)
 
     this.flash = Math.max(0, this.flash - dt * 3)
     this.dispScore += (this.score - this.dispScore) * Math.min(1, dt * 8)
@@ -308,8 +394,9 @@ export class MiraiGame {
     const glow = ctx.createRadialGradient(W * 0.52, H * 0.5, 40, W * 0.52, H * 0.5, W * 0.6)
     glow.addColorStop(0, 'rgba(80,160,235,0.13)'); glow.addColorStop(1, 'rgba(80,160,235,0)')
     ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H)
-    if (this.feverTime > 0 && !rm) {
-      ctx.fillStyle = COL.good; ctx.globalAlpha = 0.06; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1
+    if (this.feverTime > 0) {
+      // フィーバー中は「みらいビジョン」：背景発光を強調（点滅はさせない）
+      ctx.fillStyle = COL.good; ctx.globalAlpha = rm ? 0.05 : 0.1; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1
     }
 
     // ゴール（ネット表現＋発光ライン）
@@ -336,9 +423,12 @@ export class MiraiGame {
     ctx.globalAlpha = 1
 
     for (const b of this.active) this.drawBall(ctx, b, rm)
+    if (this.guided) this.drawGuideArrow(ctx, rm)
 
     // パッド（キャッチャー）：グラデ＋発光＋中央コア（色で自動/プレイヤーを区別）
-    const px = this.pad.x, py = this.pad.y, pw = this.pad.w, ph = this.pad.h
+    // キャッチした瞬間は少しポップ（拡大）させて「掴んだ」手応えを出す。
+    const pop = rm ? 0 : this.pad.popT * 0.14
+    const px = this.pad.x, py = this.pad.y, pw = this.pad.w * (1 + pop), ph = this.pad.h * (1 + pop * 0.7 + (this.feverTime > 0 && !rm ? 0.1 : 0))
     const cMain = this.auto ? '#3aa2ff' : '#40f0a4', cDark = this.auto ? '#1e6ed0' : '#1cb579'
     ctx.save()
     if (!rm) { ctx.shadowColor = cMain; ctx.shadowBlur = 16 }
@@ -368,17 +458,57 @@ export class MiraiGame {
     ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath()
   }
 
+  // ガイド球のねらい位置へ「ここにもっていこう」の指さし表示。
+  private drawGuideArrow(ctx: CanvasRenderingContext2D, rm: boolean): void {
+    const gb = this.active[0]
+    if (!gb || this.guideCaught) return
+    const ty = gb.y
+    const ax = this.pad.x - 46
+    const dir = ty > this.pad.y ? 1 : ty < this.pad.y ? -1 : 0
+    ctx.save()
+    ctx.strokeStyle = 'rgba(255,212,94,0.85)'; ctx.lineWidth = 4
+    if (!rm) ctx.setLineDash([10, 8])
+    ctx.beginPath(); ctx.moveTo(ax, this.pad.y); ctx.lineTo(ax, ty); ctx.stroke(); ctx.setLineDash([])
+    if (dir !== 0) {
+      ctx.fillStyle = 'rgba(255,212,94,0.95)'
+      ctx.beginPath()
+      ctx.moveTo(ax, ty + dir * 4)
+      ctx.lineTo(ax - 9, ty - dir * 12)
+      ctx.lineTo(ax + 9, ty - dir * 12)
+      ctx.closePath(); ctx.fill()
+    }
+    ctx.fillStyle = 'rgba(255,255,255,0.95)'
+    ctx.font = '800 16px "M PLUS Rounded 1c", system-ui, sans-serif'
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+    ctx.fillText('ここに もっていこう', ax, ty - dir * 30)
+    ctx.restore()
+  }
+
   private drawBall(ctx: CanvasRenderingContext2D, b: Ball, rm: boolean): void {
-    // 予測ゴースト（着地点マーカー付き）
-    if (b.ghostT > 0) {
-      const ga = this.clamp(b.ghostT / this.diff.ghostTime, 0, 1) * 0.8
+    const occluding = !this.guided && this.feverTime <= 0 && this.diff.occludeHi > this.diff.occludeLo
+      && b.x <= this.diff.occludeHi && b.x >= this.diff.occludeLo
+    // 予測ゴースト（着地点マーカー付き）。フィーバー中は強制ON＝みらいビジョンのごほうび。ガイド中は常時ON。
+    const feverOn = this.feverTime > 0 && !this.guided
+    if (occluding) {
+      // かくれんぼゾーン：本体は隠して「？」のうすい気配だけ残す（自分の頭で通り道を延長する区間）
+      ctx.fillStyle = 'rgba(200,225,255,0.2)'
+      ctx.beginPath(); ctx.arc(b.x, b.y, b.r * 0.65, 0, Math.PI * 2); ctx.fill()
+      ctx.fillStyle = 'rgba(225,238,255,0.55)'
+      ctx.font = '800 15px "M PLUS Rounded 1c", system-ui, sans-serif'
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+      ctx.fillText('？', b.x, b.y)
+      return
+    }
+    if (feverOn || (b.ghostT > 0 && !this.guided) || this.guided) {
+      const ga = feverOn ? 0.8 : (this.guided ? 0.75 : this.clamp(b.ghostT / this.diff.ghostTime, 0, 1) * 0.8)
       const fy = this.futureYOf(b)
+      const markerR = b.r + (this.guided ? 15 : 5)
       ctx.strokeStyle = 'rgba(185,228,255,' + (ga * 0.7) + ')'; ctx.setLineDash([6, 8]); ctx.lineWidth = 2.5
       ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.lineTo(PAD_X, fy); ctx.stroke(); ctx.setLineDash([])
       ctx.fillStyle = 'rgba(185,228,255,' + (ga * 0.2) + ')'
-      ctx.beginPath(); ctx.arc(PAD_X, fy, b.r + 5, 0, Math.PI * 2); ctx.fill()
+      ctx.beginPath(); ctx.arc(PAD_X, fy, markerR, 0, Math.PI * 2); ctx.fill()
       ctx.strokeStyle = 'rgba(185,228,255,' + (ga * 0.85) + ')'; ctx.lineWidth = 2
-      ctx.beginPath(); ctx.arc(PAD_X, fy, b.r + 5, 0, Math.PI * 2); ctx.stroke()
+      ctx.beginPath(); ctx.arc(PAD_X, fy, markerR, 0, Math.PI * 2); ctx.stroke()
     }
     // トレイル
     for (let t = 0; t < b.trail.length; t++) {
@@ -425,7 +555,11 @@ export class MiraiGame {
     if (this.combo >= 2) { ctx.fillStyle = COL.gold; ctx.font = '800 16px ' + F; ctx.fillText('🔥' + this.combo, 168, 89) }
     if (this.feverTime > 0) { ctx.fillStyle = COL.gold; ctx.font = '800 13px ' + F; ctx.fillText('×2 チャンス！', 44, 109) }
 
-    if (!this.opts.attract) {
+    if (this.guided) {
+      ctx.textAlign = 'right'; ctx.fillStyle = 'rgba(255,212,94,0.95)'; ctx.font = '800 15px ' + F
+      ctx.fillText('🦉 れんしゅう中：ボールを おいかけよう', W - 30, 46)
+      ctx.textAlign = 'left'
+    } else if (!this.opts.attract) {
       ctx.textAlign = 'right'
       if (this.diff.lives > 0) {
         for (let i = 0; i < this.diff.lives; i++) {

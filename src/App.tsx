@@ -76,6 +76,33 @@ function RankTable({ scores, highlight }: { scores: ScoreEntry[]; highlight?: nu
   )
 }
 
+function Sparkline({ history }: { history: { avgReaction: number; resistRate: number }[] }) {
+  if (history.length < 2) return null
+  const vals = history.map((h) => h.avgReaction)
+  const max = Math.max(...vals)
+  const min = Math.min(...vals)
+  const span = Math.max(1, max - min)
+  const w = 168, h = 36, pad = 5
+  const pts = vals.map((v, i) => {
+    const x = pad + (i * (w - pad * 2)) / (vals.length - 1)
+    const y = pad + (1 - (v - min) / span) * (h - pad * 2) // 反応がはやい(値が小さい)ほど上に来る
+    return `${x.toFixed(1)},${y.toFixed(1)}`
+  })
+  const last = vals[vals.length - 1]
+  const prev = vals[vals.length - 2]
+  const diff = Math.round(prev - last)
+  const msg = diff > 15 ? `まえより ${diff}ms はやい！` : 'いいちょうし！'
+  return (
+    <div className="spark">
+      <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} aria-hidden="true">
+        <polyline points={pts.join(' ')} fill="none" stroke="#1fa88a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+        <circle cx={pts[pts.length - 1].split(',')[0]} cy={pts[pts.length - 1].split(',')[1]} r="3" fill="#14806b" />
+      </svg>
+      <span className="spark-msg">{msg}</span>
+    </div>
+  )
+}
+
 function NextBadges({ items }: { items: { badge: Badge; frac: number }[] }) {
   if (items.length === 0) return null
   return (
@@ -112,6 +139,8 @@ function BadgeGrid({ earned }: { earned: Set<string> }) {
   )
 }
 
+type TutorialStage = 'read' | 'practice'
+
 export default function App() {
   const [data, setData] = useState<SaveData>(() => load())
   const [screen, setScreen] = useState<Screen>('menu')
@@ -119,6 +148,7 @@ export default function App() {
   const [playKey, setPlayKey] = useState(0)
   const [newRank, setNewRank] = useState<number | null>(null)
   const [newBadges, setNewBadges] = useState<Badge[]>([])
+  const [tutorialStage, setTutorialStage] = useState<TutorialStage>('read')
 
   const persist = useCallback((patch: Partial<SaveData>) => {
     setData((prev) => {
@@ -137,13 +167,18 @@ export default function App() {
   const onStart = useCallback(() => {
     unlock()
     if (data.tutorialSeen) beginPlay()
-    else setScreen('tutorial')
+    else { setTutorialStage('read'); setScreen('tutorial') }
   }, [data.tutorialSeen, beginPlay])
 
   const onTutorialDone = useCallback(() => {
     persist({ tutorialSeen: true })
     beginPlay()
   }, [persist, beginPlay])
+
+  const onStartPractice = useCallback(() => {
+    unlock()
+    setTutorialStage('practice')
+  }, [])
 
   const onEnd = useCallback((r: RoundResult) => {
     const prev = load()
@@ -167,7 +202,8 @@ export default function App() {
     setScreen('result')
   }, [])
 
-  const showBackdrop = screen === 'menu' || screen === 'tutorial' || screen === 'result' || screen === 'ranking'
+  const tutorialPracticing = screen === 'tutorial' && tutorialStage === 'practice'
+  const showBackdrop = !tutorialPracticing && (screen === 'menu' || screen === 'tutorial' || screen === 'result' || screen === 'ranking')
   const best = data.best
   const modeButtons = useMemo<Mode[]>(() => ['easy', 'normal'], [])
   const earnedSet = useMemo(() => new Set(data.badges), [data.badges])
@@ -201,6 +237,8 @@ export default function App() {
             mode={data.mode}
             reducedMotion={data.reducedMotion}
             sound={data.sound}
+            haptics={data.haptics}
+            bestScore={data.best.score}
             attract={false}
             onEnd={onEnd}
           />
@@ -252,12 +290,33 @@ export default function App() {
                   />
                   演出をひかえめに
                 </label>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={data.haptics}
+                    onChange={(e) => persist({ haptics: e.target.checked })}
+                  />
+                  ブルブル
+                </label>
               </div>
             </div>
           </div>
         )}
 
-        {screen === 'tutorial' && (
+        {tutorialPracticing && (
+          <GameCanvas
+            key="tutorial-practice"
+            mode="easy"
+            reducedMotion={data.reducedMotion}
+            sound={data.sound}
+            haptics={data.haptics}
+            attract={false}
+            guided
+            onGuidedDone={onTutorialDone}
+          />
+        )}
+
+        {screen === 'tutorial' && tutorialStage === 'read' && (
           <div className="overlay">
             <div className="panel">
               <h2 className="panel-title">あそびかた</h2>
@@ -267,9 +326,12 @@ export default function App() {
                 <li>がまんできると「見きわめボーナス」でスコアアップ。</li>
               </ol>
               <p className="panel-sub">まちがえても大丈夫。ライフは3つ、40秒で1ゲーム。10コンボで「シグナルチャンス（2倍）」！</p>
-              <button className="cta" onClick={onTutorialDone}>わかった！</button>
+              <button className="cta" onClick={onStartPractice}>いっかい やってみる！</button>
             </div>
           </div>
+        )}
+        {tutorialPracticing && (
+          <p className="practice-caption">じっさいに あそんでみよう！</p>
         )}
 
         {screen === 'result' && result && (
@@ -295,6 +357,8 @@ export default function App() {
                   </span>
                 </div>
               </div>
+
+              <Sparkline history={data.history} />
 
               {newBadges.length > 0 && (
                 <div className="new-badges">

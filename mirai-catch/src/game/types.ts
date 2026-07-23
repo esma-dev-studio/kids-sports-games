@@ -1,6 +1,7 @@
 export type Mode = 'easy' | 'normal' | 'hard'
 
 export interface RoundResult {
+  mode: Mode
   score: number
   maxCombo: number
   intercepts: number
@@ -18,5 +19,7 @@ export interface EngineOpts {
   reducedMotion: boolean
   sound: boolean
   attract: boolean // true=メニューのお手本自動デモ
+  guided?: boolean // true=さわって覚えるガイドつきチュートリアル（1球・超低速）
   onEnd?: (r: RoundResult) => void
+  onGuideDone?: () => void // guided時、1球キャッチしたら呼ばれる
 }

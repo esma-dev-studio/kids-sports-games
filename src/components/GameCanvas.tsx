@@ -8,13 +8,19 @@ interface Props {
   reducedMotion: boolean
   sound: boolean
   attract: boolean
+  haptics?: boolean
+  bestScore?: number
+  guided?: boolean
   onEnd?: (r: RoundResult) => void
+  onGuidedDone?: () => void
 }
 
-export function GameCanvas({ mode, reducedMotion, sound, attract, onEnd }: Props) {
+export function GameCanvas({ mode, reducedMotion, sound, attract, haptics, bestScore, guided, onEnd, onGuidedDone }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const onEndRef = useRef(onEnd)
   onEndRef.current = onEnd
+  const onGuidedDoneRef = useRef(onGuidedDone)
+  onGuidedDoneRef.current = onGuidedDone
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -27,7 +33,11 @@ export function GameCanvas({ mode, reducedMotion, sound, attract, onEnd }: Props
       reducedMotion,
       sound,
       attract,
+      haptics,
+      bestScore,
+      guided,
       onEnd: (r) => onEndRef.current?.(r),
+      onGuidedDone: () => onGuidedDoneRef.current?.(),
     })
 
     let raf = 0
@@ -51,12 +61,28 @@ export function GameCanvas({ mode, reducedMotion, sound, attract, onEnd }: Props
     }
     canvas.addEventListener('pointerdown', onDown)
 
+    // キーボード操作：Space/Enterで本命ノード、数字キー1〜9で任意ノードを狙える
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code === 'Space' || e.code === 'Enter') {
+        e.preventDefault()
+        game.hitActive()
+        return
+      }
+      const m = /^Digit([1-9])$/.exec(e.code)
+      if (m) {
+        e.preventDefault()
+        game.hitNode(Number(m[1]) - 1)
+      }
+    }
+    canvas.addEventListener('keydown', onKey)
+
     return () => {
       cancelAnimationFrame(raf)
       canvas.removeEventListener('pointerdown', onDown)
+      canvas.removeEventListener('keydown', onKey)
     }
     // 設定が変わったらエンジンを作り直す（親のkeyでも再マウントする）
-  }, [mode, reducedMotion, sound, attract])
+  }, [mode, reducedMotion, sound, attract, haptics, bestScore, guided])
 
   return (
     <canvas
@@ -64,7 +90,8 @@ export function GameCanvas({ mode, reducedMotion, sound, attract, onEnd }: Props
       width={W}
       height={H}
       className="game-canvas"
-      aria-label="まもれ！シグナル・ヒーローのゲーム画面"
+      tabIndex={attract ? -1 : 0}
+      aria-label="まもれ！シグナル・ヒーローのゲーム画面。スペースキーまたはタップで反応できます"
     />
   )
 }

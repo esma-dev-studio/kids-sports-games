@@ -58,6 +58,7 @@ html, body {
   display: block;
   touch-action: none;
 }
+.game-canvas:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; }
 
 .overlay {
   position: fixed;

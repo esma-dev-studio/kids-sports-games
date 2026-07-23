@@ -26,6 +26,7 @@ export interface SaveData {
   mode: Mode
   reducedMotion: boolean
   sound: boolean
+  missionDone: string[] // 達成済みの「きょうのミッション」日付キー一覧（例: '2026-07-23'）
 }
 
 const DEFAULT: SaveData = {
@@ -38,6 +39,7 @@ const DEFAULT: SaveData = {
   mode: 'easy',
   reducedMotion: false,
   sound: true,
+  missionDone: [],
 }
 
 export function load(): SaveData {
@@ -52,6 +54,7 @@ export function load(): SaveData {
       scores: Array.isArray(parsed.scores) ? parsed.scores.slice(0, RANK_MAX) : [],
       stats: { ...EMPTY_STATS, ...(parsed.stats ?? {}) },
       badges: Array.isArray(parsed.badges) ? parsed.badges : [],
+      missionDone: Array.isArray(parsed.missionDone) ? parsed.missionDone.slice(-30) : [],
     }
   } catch {
     return { ...DEFAULT }

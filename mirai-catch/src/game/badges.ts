@@ -25,15 +25,22 @@ export interface Stats {
   accuracyStar3: number
   doubleStar: number
   perfectRounds: number
+  // 「のびた力」の見える化用の軽量履歴（最新10ラウンド）。旧セーブには無いのでload時にデフォルト補完される。
+  recentEarlyRate?: number[]
+  recentIntercepts?: number[]
 }
 
 export const EMPTY_STATS: Stats = {
   playCount: 0, totalScore: 0, bestScore: 0, bestCombo: 0,
   totalIntercept: 0, earlyTotal: 0, curveTotal: 0,
   predictStar3: 0, accuracyStar3: 0, doubleStar: 0, perfectRounds: 0,
+  recentEarlyRate: [], recentIntercepts: [],
 }
 
+const HISTORY_MAX = 10
+
 export function accumulate(p: Stats, r: RoundResult): Stats {
+  const earlyRate = r.intercepts ? r.earlyIntercepts / r.intercepts : 0
   return {
     playCount: p.playCount + 1,
     totalScore: p.totalScore + r.score,
@@ -46,6 +53,8 @@ export function accumulate(p: Stats, r: RoundResult): Stats {
     accuracyStar3: p.accuracyStar3 + (r.accuracyStars === 3 ? 1 : 0),
     doubleStar: p.doubleStar + (r.predictStars === 3 && r.accuracyStars === 3 ? 1 : 0),
     perfectRounds: p.perfectRounds + (r.conceded === 0 && r.intercepts > 0 ? 1 : 0),
+    recentEarlyRate: [...(p.recentEarlyRate ?? []), earlyRate].slice(-HISTORY_MAX),
+    recentIntercepts: [...(p.recentIntercepts ?? []), r.intercepts].slice(-HISTORY_MAX),
   }
 }
 

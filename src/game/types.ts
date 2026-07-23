@@ -21,5 +21,9 @@ export interface EngineOpts {
   reducedMotion: boolean
   sound: boolean
   attract: boolean // true=メニューのお手本自動デモ, false=本番プレイ
+  haptics?: boolean // 触覚フィードバック（既定true）。reducedMotion時は自動的に抑制される
+  bestScore?: number // 自己ベストスコア（HUDの「ベストまであと」表示・演出に使用）
+  guided?: boolean // true=チュートリアルの体験ステップ（GO成功1回＋がまん成功1回で自動終了。ミスは減点なし）
   onEnd?: (r: RoundResult) => void
+  onGuidedDone?: () => void
 }

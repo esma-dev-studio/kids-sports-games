@@ -1,16 +1,29 @@
 import type { EngineOpts, RoundResult } from './types'
-import { DIFF, H, ROUND_TIME, SHUFFLE_EVERY, STATIONS, W, type Station } from './config'
-import { playComplete, playMiss, playPlace } from './audio'
+import {
+  DIFF, GOLDEN_CHANCE, GOLDEN_SCORE_GATE, H,
+  INTENSITY_MAX, INTENSITY_MIN, INTENSITY_UPDATE_EVERY, RECENT_WINDOW, ROUND_TIME,
+  RUSH_DURATION, RUSH_EVERY, RUSH_PLATE_BONUS, RUSH_PLATE_CHANCE, RUSH_PLATE_SCORE_GATE, RUSH_PLATE_TIME,
+  RUSH_SCORE_GATE, RUSH_SPAWN_MULT,
+  SHUFFLE_EVERY_MAX, SHUFFLE_EVERY_MIN, SHUFFLE_LABEL_DIM_TIME, SHUFFLE_SCAN_BONUS_TIME,
+  SPEED_STAR2_PLATES, SPEED_STAR3_PLATES, STATIONS, W, type Station,
+} from './config'
+import { playComplete, playMiss, playPlace, vibrate } from './audio'
 import { load, save } from './storage'
 
-interface Plate { s: Station; x: number; y: number; w: number; h: number; fill: number; need: number; glow: number; shake: number; face: string; faceT: number }
+interface Plate {
+  s: Station; x: number; y: number; w: number; h: number; fill: number; need: number
+  glow: number; shake: number; face: string; faceT: number
+  rush: boolean; rushLeft: number; labelDim: number
+}
 type ItemState = 'fly' | 'held' | 'gone'
 interface Item {
   s: Station; x: number; y: number; vx: number; vy: number; r: number
   state: ItemState; settleY: number; wob: number; blink: number
+  settleAge: number; golden: boolean
 }
 interface Particle { x: number; y: number; vx: number; vy: number; life: number; r: number; col: string }
 interface Floater { x: number; y: number; text: string; life: number; col: string }
+interface KeyAnim { it: Item; p: Plate }
 
 const rnd = (a: number, b: number) => a + Math.random() * (b - a)
 const pick = <T,>(a: T[]): T => a[(Math.random() * a.length) | 0]
@@ -32,18 +45,38 @@ export class KitchenGame {
   private flash = 0
   private now = 0
   private spawnTimer = 0.6
-  private shuffleTimer = SHUFFLE_EVERY
+  private shuffleTimer = SHUFFLE_EVERY_MAX
   private ended = false
 
   private correct = 0
   private mistakes = 0
   private platesDone = 0
   private maxCombo = 0
+  private wilts = 0
+  private goldenCaught = 0
+
+  // DDA（成績連動の適応難易度）
+  private intensity = 1
+  private intensityTimer = INTENSITY_UPDATE_EVERY
+  private recentBuffer: number[] = []
+
+  // オーダーラッシュ
+  private rushTimer = RUSH_EVERY
+  private rushActive = false
+  private rushLeft = 0
+
+  // シャッフル直後の全体把握ボーナス／連続正解ミッション計測
+  private postShuffleWindow = 0
+  private postShuffleStreak = 0
+  private postShuffleStreakMax = 0
 
   // ドラッグ
   private held: Item | null = null
   private pointerX = W / 2
   private pointerY = H / 2
+
+  // キーボード操作
+  private keyAnim: KeyAnim | null = null
 
   // お手本（attract）
   private auto: boolean
@@ -58,7 +91,9 @@ export class KitchenGame {
     this.diff = DIFF[opts.mode]
     this.auto = opts.attract
     this.stations = STATIONS.slice(0, this.diff.stationCount)
+    this.timeLeft = ROUND_TIME
     this.layoutPlates()
+    this.shuffleTimer = this.nextShuffleInterval()
     for (let i = 0; i < 3; i++) this.spawnItem()
   }
 
@@ -71,8 +106,24 @@ export class KitchenGame {
     this.plates = []
     for (let i = 0; i < n; i++) {
       const s = this.stations[order[i]]
-      this.plates.push({ s, x: marginX + i * (pw + gap), y: H - 150, w: pw, h: 118, fill: 0, need: this.diff.need, glow: 0, shake: 0, face: '', faceT: 0 })
+      this.plates.push({
+        s, x: marginX + i * (pw + gap), y: H - 150, w: pw, h: 118, fill: 0, need: this.diff.need,
+        glow: 0, shake: 0, face: '', faceT: 0, rush: false, rushLeft: 0, labelDim: 0,
+      })
     }
+  }
+
+  private effFallScale(): number { return this.diff.fallScale * this.intensity }
+  private effSettleLife(): number { return this.diff.settleLife / this.intensity }
+
+  private nextShuffleInterval(): number {
+    const t = Math.max(0, Math.min(1, (this.intensity - INTENSITY_MIN) / (INTENSITY_MAX - INTENSITY_MIN)))
+    return SHUFFLE_EVERY_MAX - t * (SHUFFLE_EVERY_MAX - SHUFFLE_EVERY_MIN)
+  }
+
+  private recordOutcome(ok: boolean): void {
+    this.recentBuffer.push(ok ? 1 : 0)
+    if (this.recentBuffer.length > RECENT_WINDOW) this.recentBuffer.shift()
   }
 
   private spawnItem(): void {
@@ -80,14 +131,16 @@ export class KitchenGame {
     const s = pick(this.stations)
     const side = pick(['top', 'left', 'right'] as const)
     let x: number, y: number, vx: number, vy: number
-    const fs = this.diff.fallScale
+    const fs = this.effFallScale()
     if (side === 'top') { x = rnd(180, W - 180); y = -30; vx = rnd(-70, 70); vy = rnd(90, 160) * fs }
     else if (side === 'left') { x = -30; y = rnd(60, 220); vx = rnd(150, 210); vy = rnd(-60, 40) }
     else { x = W + 30; y = rnd(60, 220); vx = -rnd(150, 210); vy = rnd(-60, 40) }
+    const golden = !this.opts.attract && this.score >= GOLDEN_SCORE_GATE && Math.random() < GOLDEN_CHANCE
     this.items.push({
       s, x, y, vx, vy, r: 30, state: 'fly',
       settleY: rnd(150, 300) + (side === 'top' ? 0 : 120),
       wob: rnd(0, 6.28), blink: rnd(0, 200),
+      settleAge: 0, golden,
     })
   }
 
@@ -111,43 +164,66 @@ export class KitchenGame {
     if (!p) { it.state = 'fly'; it.vx = 0; it.vy = 60; return }
     if (p.s.key === it.s.key && p.fill < p.need) {
       p.fill++; p.shake = 1
-      this.combo++
+      const comboAdd = it.golden ? 2 : 1
+      this.combo += comboAdd
       if (this.combo > this.maxCombo) this.maxCombo = this.combo
       this.correct++
+      this.recordOutcome(true)
+      this.postShuffleStreak++
+      if (this.postShuffleStreak > this.postShuffleStreakMax) this.postShuffleStreakMax = this.postShuffleStreak
       p.face = this.combo >= 8 ? 'great' : 'happy'; p.faceT = 0.6
-      const gain = 10 + this.combo * 2
+      let gain = 10 + this.combo * 2
+      if (it.golden) { gain *= 2; this.goldenCaught++ }
+      const scanBonus = this.postShuffleWindow > 0
+      if (scanBonus) gain += 8
       this.score += gain
       this.flash = 0.35
-      this.burst(it.x, it.y, p.s.col, 10)
+      this.burst(it.x, it.y, p.s.col, it.golden ? 16 : 10)
       this.floater(it.x, it.y - 20, '+' + gain, p.s.col)
+      if (scanBonus) this.floater(it.x, it.y - 66, 'よく見えた！', '#3d84c6')
       if (this.combo >= 2) this.floater(it.x, it.y - 46, this.combo + ' コンボ!', '#e08a1a')
+      if (this.combo >= 8 && this.combo % 8 === 0) this.floater(W / 2, 96, 'ぴよ：そのちょうし〜！', '#e08a1a')
       if (this.opts.sound) playPlace(this.combo)
+      if (this.opts.sound && !this.opts.reducedMotion) vibrate(10)
       it.state = 'gone'
       if (p.fill >= p.need) this.completePlate(p)
     } else {
       this.combo = 0
+      this.postShuffleStreak = 0
       this.mistakes++
+      this.recordOutcome(false)
       p.face = 'oops'; p.faceT = 0.6
       this.patience = Math.max(0, this.patience - 0.12)
       this.burst(it.x, it.y, '#999', 6)
       this.floater(it.x, it.y - 20, 'ちがう！', '#c0392b')
       if (this.opts.sound) playMiss()
-      it.state = 'fly'; it.vx = rnd(-60, 60); it.vy = -160
+      it.state = 'fly'; it.vx = rnd(-60, 60); it.vy = -160; it.settleAge = 0
     }
   }
 
   private completePlate(p: Plate): void {
     p.glow = 1
     p.face = 'great'; p.faceT = 0.9
+    p.shake = 1.5
     this.platesDone++
-    this.score += 50
-    this.flash = 0.6
-    this.burst(p.x + p.w / 2, p.y + p.h * 0.4, p.s.col, 24)
+    let bonus = 50
+    if (p.rush) { bonus += RUSH_PLATE_BONUS; this.floater(p.x + p.w / 2, p.y - 34, 'ラッシュボーナス！+' + RUSH_PLATE_BONUS, '#7a5cc0') }
+    this.score += bonus
+    this.flash = 0.35
+    this.burst(p.x + p.w / 2, p.y + p.h * 0.4, p.s.col, Math.min(34, 24 + Math.floor(this.combo / 2)))
     this.floater(p.x + p.w / 2, p.y - 10, 'できあがり!', p.s.col)
     this.patience = Math.min(1, this.patience + 0.14)
     if (this.opts.sound) playComplete()
+    if (this.opts.sound && !this.opts.reducedMotion) vibrate([0, 20, 40, 20])
     const reset = p
-    window.setTimeout(() => { reset.fill = 0 }, 520)
+    window.setTimeout(() => {
+      reset.fill = 0
+      reset.rush = false
+      if (!this.opts.attract && this.score >= RUSH_PLATE_SCORE_GATE && !this.plates.some((pl) => pl.rush) && Math.random() < RUSH_PLATE_CHANCE) {
+        reset.rush = true
+        reset.rushLeft = RUSH_PLATE_TIME
+      }
+    }, 520)
   }
 
   private matchPlate(key: string): Plate | null {
@@ -164,8 +240,8 @@ export class KitchenGame {
     if (acc >= 0.9) accuracyStars = 3
     else if (acc >= 0.7) accuracyStars = 2
     let speedStars = 1
-    if (this.platesDone >= 8) speedStars = 3
-    else if (this.platesDone >= 4) speedStars = 2
+    if (this.platesDone >= SPEED_STAR3_PLATES) speedStars = 3
+    else if (this.platesDone >= SPEED_STAR2_PLATES) speedStars = 2
 
     const data = load()
     const isBestScore = this.score > data.best.score
@@ -186,6 +262,9 @@ export class KitchenGame {
       speedStars,
       accuracy: Math.round(acc * 100),
       isBestScore,
+      wilts: this.wilts,
+      goldenCaught: this.goldenCaught,
+      postShuffleStreak: this.postShuffleStreakMax,
     }
     this.opts.onEnd?.(result)
   }
@@ -208,7 +287,7 @@ export class KitchenGame {
     this.releaseGhost()
     this.pointerX = x; this.pointerY = y
     const g = this.grabAt(x, y)
-    if (g) { this.held = g; g.state = 'held' }
+    if (g) { this.held = g; g.state = 'held'; this.keyAnim = null }
   }
   pointerMove(x: number, y: number): void {
     this.pointerX = x; this.pointerY = y
@@ -216,6 +295,25 @@ export class KitchenGame {
   }
   pointerUp(): void {
     if (this.held) { this.tryPlace(this.held, this.plateAt(this.held.x, this.held.y)); this.held = null }
+  }
+
+  /** キーボード操作：数字キー(1〜)で、その順位のお皿（左→右）へ最も緊急な食材を自動で送る */
+  sendByKey(keyIndex: number): void {
+    if (this.ended || this.opts.attract) return
+    const ordered = [...this.plates].sort((a, b) => a.x - b.x)
+    const p = ordered[keyIndex]
+    if (!p || p.fill >= p.need) return
+    let best: Item | null = null
+    let bestAge = -Infinity
+    for (const it of this.items) {
+      if (it.state !== 'fly') continue
+      if (it.s.key !== p.s.key) continue
+      if (it.settleAge > bestAge) { bestAge = it.settleAge; best = it }
+    }
+    if (!best) return
+    this.auto = false
+    best.state = 'held'
+    this.keyAnim = { it: best, p }
   }
 
   private releaseGhost(): void {
@@ -232,23 +330,65 @@ export class KitchenGame {
       if (this.timeLeft <= 0) { this.timeLeft = 0; this.finish(); return }
     }
 
+    this.intensityTimer -= dt
+    if (this.intensityTimer <= 0) {
+      this.intensityTimer = INTENSITY_UPDATE_EVERY
+      if (this.recentBuffer.length >= 4) {
+        const acc = this.recentBuffer.reduce((a, b) => a + b, 0) / this.recentBuffer.length
+        if (acc >= 0.85) this.intensity = Math.min(INTENSITY_MAX, this.intensity + 0.05)
+        else if (acc <= 0.6) this.intensity = Math.max(INTENSITY_MIN, this.intensity - 0.07)
+        else this.intensity += (1 - this.intensity) * 0.15
+      }
+    }
+
     this.spawnTimer -= dt
     if (this.spawnTimer <= 0) {
       this.spawnItem()
-      this.spawnTimer = Math.max(this.diff.spawnFloor, this.diff.spawnBase - this.score * 0.0006)
+      let interval = Math.max(this.diff.spawnFloor, this.diff.spawnBase - (this.intensity - 1) * 0.5)
+      if (this.rushActive) interval *= RUSH_SPAWN_MULT
+      this.spawnTimer = interval
+    }
+
+    if (!this.opts.attract) {
+      if (this.rushActive) {
+        this.rushLeft -= dt
+        if (this.rushLeft <= 0) this.rushActive = false
+      } else {
+        this.rushTimer -= dt
+        if (this.rushTimer <= 0) {
+          this.rushTimer = RUSH_EVERY
+          if (this.score >= RUSH_SCORE_GATE) {
+            this.rushActive = true
+            this.rushLeft = RUSH_DURATION
+            this.floater(W / 2, 96, 'オーダーラッシュ！', '#7a5cc0')
+          }
+        }
+      }
     }
 
     this.shuffleTimer -= dt
     if (this.shuffleTimer <= 0) {
-      this.shuffleTimer = SHUFFLE_EVERY
+      this.shuffleTimer = this.nextShuffleInterval()
       this.shufflePlates()
     }
+    if (this.postShuffleWindow > 0) this.postShuffleWindow = Math.max(0, this.postShuffleWindow - dt)
 
     if (this.auto) this.autoStep(dt)
 
     if (this.held) {
       this.held.x += (this.pointerX - this.held.x) * Math.min(1, dt * 20)
       this.held.y += (this.pointerY - this.held.y) * Math.min(1, dt * 20)
+    }
+
+    if (this.keyAnim) {
+      const { it, p } = this.keyAnim
+      const tx = p.x + p.w / 2, ty = p.y + p.h * 0.3
+      it.x += (tx - it.x) * Math.min(1, dt * 16)
+      it.y += (ty - it.y) * Math.min(1, dt * 16)
+      if (Math.abs(tx - it.x) < 8 && Math.abs(ty - it.y) < 8) {
+        this.tryPlace(it, p)
+        this.keyAnim = null
+      }
     }
 
     this.ghostVisX += (this.ghostX - this.ghostVisX) * Math.min(1, dt * 12)
@@ -258,15 +398,29 @@ export class KitchenGame {
       const it = this.items[i]
       if (it.state === 'gone') { this.items.splice(i, 1); continue }
       if (it.state === 'fly') {
-        it.vy += 520 * this.diff.fallScale * dt
+        it.vy += 520 * this.effFallScale() * dt
         it.x += it.vx * dt; it.y += it.vy * dt
         if (it.y > it.settleY && it.vy > 0 && it.y < H - 190) {
           it.vy *= -0.32; it.y = it.settleY; it.vx *= 0.7
           if (Math.abs(it.vy) < 40) it.vy = 0
         }
+        if (it.y >= it.settleY - 4) {
+          it.settleAge += dt
+          if (it.settleAge >= this.effSettleLife()) {
+            this.combo = 0
+            this.postShuffleStreak = 0
+            this.patience = Math.max(0, this.patience - 0.1)
+            this.wilts++
+            this.recordOutcome(false)
+            this.floater(it.x, it.y - 24, 'いたんじゃった…', '#8a6238')
+            this.items.splice(i, 1); continue
+          }
+        }
         if (it.y > H + 40) {
           this.combo = 0
+          this.postShuffleStreak = 0
           this.patience = Math.max(0, this.patience - 0.06)
+          this.recordOutcome(false)
           this.floater(it.x, H - 120, 'おっと！', '#c0392b')
           this.items.splice(i, 1); continue
         }
@@ -292,19 +446,31 @@ export class KitchenGame {
       if (p.glow > 0) p.glow -= dt * 1.2
       if (p.shake > 0) p.shake -= dt * 3
       if (p.faceT > 0) { p.faceT -= dt; if (p.faceT <= 0) p.face = '' }
+      if (p.rush) { p.rushLeft -= dt; if (p.rushLeft <= 0) p.rush = false }
+      if (p.labelDim > 0) p.labelDim = Math.max(0, p.labelDim - dt / SHUFFLE_LABEL_DIM_TIME)
     }
     if (this.flash > 0) this.flash -= dt * 1.8
   }
 
   private shufflePlates(): void {
     if (this.plates.length < 2) return
-    const a = (Math.random() * this.plates.length) | 0
-    let b = (Math.random() * this.plates.length) | 0
-    if (a === b) b = (b + 1) % this.plates.length
-    const ax = this.plates[a].x, aw = this.plates[a].w
-    this.plates[a].x = this.plates[b].x; this.plates[a].w = this.plates[b].w
-    this.plates[b].x = ax; this.plates[b].w = aw
-    this.plates[a].shake = 1; this.plates[b].shake = 1
+    const positions = this.plates.map((p) => ({ x: p.x, w: p.w }))
+    const idx = positions.map((_, i) => i)
+    do {
+      for (let i = idx.length - 1; i > 0; i--) {
+        const j = (Math.random() * (i + 1)) | 0
+        const t = idx[i]; idx[i] = idx[j]; idx[j] = t
+      }
+    } while (idx.every((v, i) => v === i) && idx.length > 1)
+    for (let i = 0; i < this.plates.length; i++) {
+      const pos = positions[idx[i]]
+      this.plates[i].x = pos.x
+      this.plates[i].w = pos.w
+      this.plates[i].shake = 1
+      this.plates[i].labelDim = 1
+    }
+    this.postShuffleWindow = SHUFFLE_SCAN_BONUS_TIME
+    this.postShuffleStreak = 0
     this.floater(W / 2, H - 210, 'シャッフル!', '#7a5cc0')
   }
 
@@ -344,7 +510,8 @@ export class KitchenGame {
   // ---- 描画 ----
   render(ctx: CanvasRenderingContext2D): void {
     this.drawScene(ctx)
-    for (const p of this.plates) this.drawPlate(ctx, p)
+    const ordered = [...this.plates].sort((a, b) => a.x - b.x)
+    for (let i = 0; i < ordered.length; i++) this.drawPlate(ctx, ordered[i], i)
     for (const it of this.items) if (it.state !== 'held') this.drawItem(ctx, it)
     this.drawParticles(ctx)
     for (const it of this.items) if (it.state === 'held') { this.drawDropHint(ctx, it); this.drawItem(ctx, it) }
@@ -365,6 +532,33 @@ export class KitchenGame {
     ctx.arcTo(x, y + h, x, y, r)
     ctx.arcTo(x, y, x + w, y, r)
     ctx.closePath()
+  }
+
+  private mixGray(hex: string, t: number): string {
+    const c = hex.replace('#', '')
+    const r = parseInt(c.substring(0, 2), 16), g = parseInt(c.substring(2, 4), 16), b = parseInt(c.substring(4, 6), 16)
+    const gray = (r + g + b) / 3
+    const mr = Math.round(r + (gray - r) * t)
+    const mg = Math.round(g + (gray - g) * t)
+    const mb = Math.round(b + (gray - b) * t)
+    return `rgb(${mr},${mg},${mb})`
+  }
+
+  private drawStar(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, col: string): void {
+    ctx.save()
+    ctx.translate(cx, cy)
+    ctx.fillStyle = col
+    ctx.strokeStyle = '#c98a1e'
+    ctx.lineWidth = 1.5
+    ctx.beginPath()
+    for (let i = 0; i < 10; i++) {
+      const rad = i % 2 === 0 ? r : r * 0.45
+      const a = -Math.PI / 2 + (i * Math.PI) / 5
+      const px = Math.cos(a) * rad, py = Math.sin(a) * rad
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py)
+    }
+    ctx.closePath(); ctx.fill(); ctx.stroke()
+    ctx.restore()
   }
 
   private icon(ctx: CanvasRenderingContext2D, key: string, x: number, y: number, r: number): void {
@@ -395,6 +589,18 @@ export class KitchenGame {
     const rm = this.opts.reducedMotion
     const bob = it.state === 'fly' ? Math.sin(this.now * 7 + it.wob) * 3 : 0
     const x = it.x, y = it.y + bob
+
+    // しおれ演出：残り1.5秒でだんだん灰色寄り＆縮小して危険を予告
+    let wiltT = 0
+    if (it.state === 'fly') {
+      const remain = this.effSettleLife() - it.settleAge
+      if (remain < 1.5) wiltT = Math.max(0, Math.min(1, 1 - remain / 1.5))
+    }
+    const scale = 1 - wiltT * 0.24
+
+    ctx.save()
+    ctx.translate(x, y); ctx.scale(scale, scale); ctx.translate(-x, -y)
+
     // 落ち影
     ctx.fillStyle = 'rgba(60,30,10,0.14)'
     ctx.beginPath(); ctx.ellipse(x, y + it.r * 0.78, it.r * 0.8, it.r * 0.24, 0, 0, 6.28); ctx.fill()
@@ -403,12 +609,13 @@ export class KitchenGame {
     if (it.state === 'held' && !rm) { ctx.shadowColor = it.s.col; ctx.shadowBlur = 12 }
     const rg = ctx.createRadialGradient(x - it.r * 0.32, y - it.r * 0.38, it.r * 0.15, x, y, it.r)
     rg.addColorStop(0, '#fff')
-    rg.addColorStop(0.45, it.s.light)
-    rg.addColorStop(1, it.s.col)
+    rg.addColorStop(0.45, wiltT > 0 ? this.mixGray(it.s.light, wiltT) : it.s.light)
+    rg.addColorStop(1, wiltT > 0 ? this.mixGray(it.s.col, wiltT) : it.s.col)
     ctx.fillStyle = rg
     ctx.beginPath(); ctx.arc(x, y, it.r, 0, 6.28); ctx.fill()
     ctx.restore()
-    ctx.strokeStyle = it.s.col; ctx.lineWidth = 3
+    ctx.strokeStyle = wiltT > 0 ? this.mixGray(it.s.col, wiltT) : it.s.col
+    ctx.lineWidth = 3
     ctx.beginPath(); ctx.arc(x, y, it.r, 0, 6.28); ctx.stroke()
     ctx.fillStyle = 'rgba(255,255,255,0.55)'
     ctx.beginPath(); ctx.arc(x - it.r * 0.34, y - it.r * 0.4, it.r * 0.22, 0, 6.28); ctx.fill()
@@ -419,6 +626,21 @@ export class KitchenGame {
     ctx.fillStyle = '#222'
     const look = it.state === 'held' ? 2 : Math.sin(this.now * 3 + it.wob) * 2
     ctx.beginPath(); ctx.arc(x - 8 + look, ey + 1, 3, 0, 6.28); ctx.arc(x + 8 + look, ey + 1, 3, 0, 6.28); ctx.fill()
+
+    if (it.golden) {
+      const pulse = rm ? 1 : 1 + Math.sin(this.now * 6 + it.wob) * 0.08
+      this.drawStar(ctx, x, y - it.r * 1.15, it.r * 0.34 * pulse, '#f4c04a')
+    }
+    ctx.restore()
+
+    if (wiltT > 0.5) {
+      ctx.save()
+      const pulse = rm ? 0.4 : 0.3 + Math.sin(this.now * 8) * 0.15
+      ctx.globalAlpha = (wiltT - 0.5) / 0.5 * Math.max(0.15, pulse)
+      ctx.strokeStyle = '#c0392b'; ctx.lineWidth = 2
+      ctx.beginPath(); ctx.arc(x, y, it.r + 5, 0, 6.28); ctx.stroke()
+      ctx.restore()
+    }
   }
 
   private drawDropHint(ctx: CanvasRenderingContext2D, it: Item): void {
@@ -458,7 +680,7 @@ export class KitchenGame {
     ctx.restore()
   }
 
-  private drawPlate(ctx: CanvasRenderingContext2D, p: Plate): void {
+  private drawPlate(ctx: CanvasRenderingContext2D, p: Plate, keyIdx: number): void {
     const rm = this.opts.reducedMotion
     const cx = p.x + p.w / 2, cy = p.y + p.h * 0.42
     // 注文カード（必要個数のアイコン）
@@ -506,14 +728,34 @@ export class KitchenGame {
       ctx.fillStyle = gg
       this.rr(ctx, p.x + 10, gy, gw, 10, 5); ctx.fill()
     }
+    // 皿名ラベル（シャッフル直後は薄くして色+アイコンでの再スキャンを促す）＋キー番号
+    ctx.save()
+    ctx.globalAlpha = 1 - p.labelDim * 0.75
     ctx.fillStyle = '#6b4a2a'; ctx.font = '600 15px "M PLUS Rounded 1c", system-ui, sans-serif'; ctx.textAlign = 'center'
     ctx.fillText(p.s.name, cx, cy + p.h * 0.5 + 4)
+    ctx.restore()
+    ctx.fillStyle = 'rgba(90,55,20,0.5)'
+    ctx.font = '700 11px "M PLUS Rounded 1c", system-ui, sans-serif'; ctx.textAlign = 'center'
+    ctx.fillText('[' + (keyIdx + 1) + ']', cx, cy + p.h * 0.5 + 19)
     if (p.glow > 0) {
       ctx.save()
       ctx.globalAlpha = p.glow
       if (!rm) { ctx.shadowColor = p.s.col; ctx.shadowBlur = 10 }
       ctx.strokeStyle = p.s.col; ctx.lineWidth = 5
       ctx.beginPath(); ctx.ellipse(cx, cy, p.w * 0.46 + (1 - p.glow) * 40, p.h * 0.34 + (1 - p.glow) * 30, 0, 0, 6.28); ctx.stroke()
+      ctx.globalAlpha = p.glow * 0.6
+      ctx.lineWidth = 3
+      ctx.beginPath(); ctx.ellipse(cx, cy, p.w * 0.46 + (1 - p.glow) * 68, p.h * 0.34 + (1 - p.glow) * 50, 0, 0, 6.28); ctx.stroke()
+      ctx.restore()
+    }
+    // 特別皿（ラッシュ）のリング表示
+    if (p.rush) {
+      ctx.save()
+      const t = Math.max(0, p.rushLeft / RUSH_PLATE_TIME)
+      ctx.strokeStyle = '#7a5cc0'; ctx.lineWidth = 4
+      ctx.beginPath(); ctx.arc(cx, p.y - 60, 26, -Math.PI / 2, -Math.PI / 2 + t * 6.283); ctx.stroke()
+      ctx.strokeStyle = 'rgba(122,92,192,0.25)'
+      ctx.beginPath(); ctx.arc(cx, p.y - 60, 26, 0, 6.283); ctx.stroke()
       ctx.restore()
     }
     // お皿のごきげんフェイス（通常はニュートラル・反応時に一瞬ぷるん）
@@ -551,6 +793,17 @@ export class KitchenGame {
         const wx = 120 + s * 260 + Math.sin(this.now * 1.2 + s) * 20
         ctx.beginPath(); ctx.ellipse(wx, 60 + Math.sin(this.now * 1.8 + s) * 10, 26, 14, 0, 0, 6.28); ctx.fill()
       }
+    }
+    // オーダーラッシュ中の演出バナー
+    if (this.rushActive && !this.opts.attract) {
+      ctx.save()
+      ctx.globalAlpha = rm ? 0.5 : 0.4 + Math.sin(this.now * 5) * 0.08
+      ctx.fillStyle = '#7a5cc0'
+      this.rr(ctx, W / 2 - 110, 78, 220, 28, 14); ctx.fill()
+      ctx.restore()
+      ctx.fillStyle = '#fff'; ctx.font = '700 14px "M PLUS Rounded 1c", system-ui, sans-serif'; ctx.textAlign = 'center'
+      ctx.fillText('オーダーラッシュ中！', W / 2, 97)
+      ctx.textAlign = 'left'
     }
   }
 

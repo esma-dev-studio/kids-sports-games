@@ -26,11 +26,15 @@ export interface Stats {
   speedStar3: number
   accuracyStar3: number
   bothStar3: number
+  wiltFreeRounds: number // しおれ0でおさらを1皿以上完成させたラウンド数
+  goldenTotal: number // きらきら食材をとどけた累計こ数
+  bestPostShuffleStreak: number // シャッフル直後の連続正解の最高記録
 }
 
 export const EMPTY_STATS: Stats = {
   playCount: 0, totalScore: 0, bestScore: 0, bestCombo: 0, bestPlates: 0,
   totalPlates: 0, totalCorrect: 0, perfectRounds: 0, speedStar3: 0, accuracyStar3: 0, bothStar3: 0,
+  wiltFreeRounds: 0, goldenTotal: 0, bestPostShuffleStreak: 0,
 }
 
 /** 1ラウンドの結果を反映して新しいスタッツを返す */
@@ -47,6 +51,9 @@ export function accumulate(p: Stats, r: RoundResult): Stats {
     speedStar3: p.speedStar3 + (r.speedStars === 3 ? 1 : 0),
     accuracyStar3: p.accuracyStar3 + (r.accuracyStars === 3 ? 1 : 0),
     bothStar3: p.bothStar3 + (r.speedStars === 3 && r.accuracyStars === 3 ? 1 : 0),
+    wiltFreeRounds: p.wiltFreeRounds + (r.wilts === 0 && r.platesDone > 0 ? 1 : 0),
+    goldenTotal: p.goldenTotal + r.goldenCaught,
+    bestPostShuffleStreak: Math.max(p.bestPostShuffleStreak, r.postShuffleStreak),
   }
 }
 
@@ -179,5 +186,13 @@ export const BADGES: Badge[] = [
   {"id":"pk-bothStar3-8","metric":"bothStar3","op":"gte","value":8,"tier":"silver","name":"神わざ厨房マスター","desc":"★3ダブルを8回そろえた達人シェフ！","icon":"🔥"},
   {"id":"pk-bothStar3-12","metric":"bothStar3","op":"gte","value":12,"tier":"gold","name":"きらめきスターシェフ","desc":"★3ダブルを12回そろえたすごいシェフ！","icon":"👨‍🍳"},
   {"id":"pk-bothStar3-20","metric":"bothStar3","op":"gte","value":20,"tier":"gold","name":"パニックキッチン王者","desc":"★3ダブルを20回もそろえた自慢の王者！","icon":"👑"},
-  {"id":"pk-bothStar3-30","metric":"bothStar3","op":"gte","value":30,"tier":"rainbow","name":"伝説のダブルレジェンド","desc":"★3ダブルを30回そろえた伝説のシェフ！","icon":"🏆"}
+  {"id":"pk-bothStar3-30","metric":"bothStar3","op":"gte","value":30,"tier":"rainbow","name":"伝説のダブルレジェンド","desc":"★3ダブルを30回そろえた伝説のシェフ！","icon":"🏆"},
+  {"id":"pk-wiltFreeRounds-1","metric":"wiltFreeRounds","op":"gte","value":1,"tier":"bronze","name":"しんせんキープ","desc":"しおれさせずに1皿できあがり！","icon":"🌱"},
+  {"id":"pk-wiltFreeRounds-5","metric":"wiltFreeRounds","op":"gte","value":5,"tier":"silver","name":"しんせん名人","desc":"しおれゼロラウンドを5回たっせい！","icon":"🥬"},
+  {"id":"pk-wiltFreeRounds-15","metric":"wiltFreeRounds","op":"gte","value":15,"tier":"gold","name":"とれたて番人","desc":"しおれゼロラウンドを15回！するどい目！","icon":"👀"},
+  {"id":"pk-goldenTotal-2","metric":"goldenTotal","op":"gte","value":2,"tier":"bronze","name":"きらきらハンター見習い","desc":"きらきら食材を2こ とどけよう！","icon":"✨"},
+  {"id":"pk-goldenTotal-10","metric":"goldenTotal","op":"gte","value":10,"tier":"silver","name":"きらきらハンター","desc":"きらきら食材を10こ とどけよう！","icon":"🌟"},
+  {"id":"pk-goldenTotal-30","metric":"goldenTotal","op":"gte","value":30,"tier":"gold","name":"きらきら収集王","desc":"きらきら食材を30こ とどけた！すごい目！","icon":"💎"},
+  {"id":"pk-bestPostShuffleStreak-3","metric":"bestPostShuffleStreak","op":"gte","value":3,"tier":"bronze","name":"シャッフル即対応","desc":"シャッフル直後に3れんぞく正解！","icon":"🔀"},
+  {"id":"pk-bestPostShuffleStreak-6","metric":"bestPostShuffleStreak","op":"gte","value":6,"tier":"silver","name":"ぜんたい把握マスター","desc":"シャッフル直後に6れんぞく正解！","icon":"🧭"}
 ]

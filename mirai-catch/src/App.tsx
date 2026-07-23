@@ -4,7 +4,7 @@ import { MODE_LABEL } from './game/config'
 import type { Mode, RoundResult } from './game/types'
 import { unlock, playFanfare } from './game/audio'
 import { addScore, load, qualifies, RANK_MAX, save, type SaveData, type ScoreEntry } from './game/storage'
-import { BADGES, accumulate, earnedIds, nextBadges, type Badge } from './game/badges'
+import { BADGES, accumulate, earnedIds, nextBadges, type Badge, type Stats } from './game/badges'
 
 type Screen = 'menu' | 'tutorial' | 'playing' | 'result' | 'ranking' | 'badges'
 const MODES: Mode[] = ['easy', 'normal', 'hard']
@@ -60,6 +60,29 @@ function RankTable({ scores, highlight }: { scores: ScoreEntry[]; highlight?: nu
   )
 }
 
+function GrowthPanel({ stats }: { stats: Stats }) {
+  const arr = stats.recentEarlyRate ?? []
+  if (arr.length < 2) return null
+  const last = arr[arr.length - 1]
+  const prevVal = arr[arr.length - 2]
+  const diffPct = Math.round(last * 100) - Math.round(prevVal * 100)
+  const ic = stats.recentIntercepts ?? []
+  const diffIc = ic.length >= 2 ? ic[ic.length - 1] - ic[ic.length - 2] : null
+  return (
+    <div className="growth">
+      <p className="growth-title">のびてるかな？（直近{arr.length}回のはやよみ率）</p>
+      <div className="spark" aria-hidden="true">
+        {arr.map((v, i) => (<span key={i} className="spark-bar" style={{ height: `${Math.max(5, Math.round(v * 36))}px` }} />))}
+      </div>
+      <p className="growth-line">
+        はやよみ率 {Math.round(last * 100)}%
+        {diffPct !== 0 && <span className={diffPct > 0 ? 'up' : 'down'}>{diffPct > 0 ? '+' : ''}{diffPct}%</span>}
+        {diffIc !== null && diffIc !== 0 && <> ・ まえより キャッチ{diffIc > 0 ? '+' : ''}{diffIc}こ</>}
+      </p>
+    </div>
+  )
+}
+
 function NextBadges({ items }: { items: { badge: Badge; frac: number }[] }) {
   if (items.length === 0) return null
   return (
@@ -103,6 +126,7 @@ export default function App() {
   const [playKey, setPlayKey] = useState(0)
   const [newRank, setNewRank] = useState<number | null>(null)
   const [newBadges, setNewBadges] = useState<Badge[]>([])
+  const [rankMode, setRankMode] = useState<Mode>(data.mode)
 
   const persist = useCallback((patch: Partial<SaveData>) => {
     setData((prev) => { const next = { ...prev, ...patch }; save(next); return next })
@@ -111,6 +135,7 @@ export default function App() {
   const beginPlay = useCallback(() => { unlock(); setPlayKey((k) => k + 1); setScreen('playing') }, [])
   const onStart = useCallback(() => { unlock(); if (data.tutorialSeen) beginPlay(); else setScreen('tutorial') }, [data.tutorialSeen, beginPlay])
   const onTutorialDone = useCallback(() => { persist({ tutorialSeen: true }); beginPlay() }, [persist, beginPlay])
+  const openRanking = useCallback(() => { setRankMode(data.mode); setScreen('ranking') }, [data.mode])
 
   const onEnd = useCallback((r: RoundResult) => {
     const prev = load()
@@ -119,8 +144,8 @@ export default function App() {
     const newly = earned.filter((id) => !prev.badges.includes(id))
     let next: SaveData = { ...prev, stats, badges: earned }
     let rank = -1
-    if (qualifies(prev.scores, r.score)) {
-      const res = addScore(next, prev.lastName || 'あなた', r.score)
+    if (qualifies(prev.scoresByMode[r.mode], r.score)) {
+      const res = addScore(next, prev.lastName || 'あなた', r.score, r.mode)
       next = res.data
       rank = res.rank
     } else {
@@ -134,8 +159,8 @@ export default function App() {
     setScreen('result')
   }, [])
 
-  const showBackdrop = screen === 'menu' || screen === 'tutorial' || screen === 'result' || screen === 'ranking'
-  const best = data.best
+  const showBackdrop = screen === 'menu' || screen === 'result' || screen === 'ranking'
+  const best = data.bestByMode[data.mode]
   const earnedSet = useMemo(() => new Set(data.badges), [data.badges])
   const teaser = useMemo(() => nextBadges(data.stats, earnedSet, 3), [data.stats, earnedSet])
 
@@ -162,6 +187,9 @@ export default function App() {
         {screen === 'playing' && (
           <GameCanvas key={`play-${playKey}`} mode={data.mode} reducedMotion={data.reducedMotion} sound={data.sound} attract={false} onEnd={onEnd} />
         )}
+        {screen === 'tutorial' && (
+          <GameCanvas key="guide" mode={data.mode} reducedMotion={data.reducedMotion} sound={data.sound} attract={false} guided onGuideDone={onTutorialDone} />
+        )}
 
         {screen === 'menu' && (
           <div className="overlay">
@@ -175,11 +203,11 @@ export default function App() {
               </div>
               <button className="cta" onClick={onStart}>はじめる</button>
               <div className="sub-links">
-                <button className="rank-link" onClick={() => setScreen('ranking')}>ランキング</button>
+                <button className="rank-link" onClick={openRanking}>ランキング</button>
                 <button className="rank-link" onClick={() => setScreen('badges')}>バッジ図鑑 {data.badges.length}/{BADGES.length}</button>
               </div>
               <NextBadges items={teaser} />
-              <div className="best">自己ベスト｜スコア <b>{best.score}</b>　コンボ <b>{best.combo}</b>　はやよみ <b>{best.early}</b></div>
+              <div className="best">自己ベスト（{MODE_LABEL[data.mode]}）｜スコア <b>{best.score}</b>　コンボ <b>{best.combo}</b>　はやよみ <b>{best.early}</b></div>
               <div className="toggles">
                 <label><input type="checkbox" checked={data.sound} onChange={(e) => persist({ sound: e.target.checked })} />音</label>
                 <label><input type="checkbox" checked={data.reducedMotion} onChange={(e) => persist({ reducedMotion: e.target.checked })} />演出をひかえめに</label>
@@ -189,17 +217,9 @@ export default function App() {
         )}
 
         {screen === 'tutorial' && (
-          <div className="overlay">
-            <div className="panel">
-              <h2 className="panel-title">あそびかた</h2>
-              <ol className="how">
-                <li>端からボールが飛んでくるよ。最初だけ<b>予測ゴースト（点線）</b>が出る。</li>
-                <li>ボールの<b>これから通る場所</b>へ、キャッチャーを<b>先回り</b>させよう（ドラッグ／なぞる）。</li>
-                <li>早く正しい場所に着けると「<b>はやよみ！</b>」で高得点。カーブ球に注意！</li>
-              </ol>
-              <p className="panel-sub">やさしい/むずかしいはミスしても大丈夫。ふつうはライフ3・40秒。<b>むずかしいは球が同時に2〜3個・速さもバラバラ！</b>どれを先に止めるか えらんで、40秒でたくさんキャッチ。10コンボで「チャンス（2倍）」！</p>
-              <button className="cta" onClick={onTutorialDone}>わかった！</button>
-            </div>
+          <div className="tutorial-banner">
+            <p>ゆっくり とんでくる ボールを、パッドで おいかけてみよう！（なぞる／ドラッグ、上下キーでもOK）</p>
+            <button className="ghost-btn small" onClick={onTutorialDone}>とばす</button>
           </div>
         )}
 
@@ -223,6 +243,8 @@ export default function App() {
                 </div>
               </div>
 
+              <GrowthPanel stats={data.stats} />
+
               {newBadges.length > 0 && (
                 <div className="new-badges">
                   <p className="nb-title">あたらしいバッジ {newBadges.length}こ！</p>
@@ -234,8 +256,9 @@ export default function App() {
               )}
 
               <div className="rank-block">
-                {newRank !== null && <p className="rank-in">ランキング {newRank + 1}位に のったよ！🎉</p>}
-                <RankTable scores={data.scores} highlight={newRank ?? undefined} />
+                {newRank !== null && <p className="rank-in">{MODE_LABEL[result.mode]}ランキング {newRank + 1}位に のったよ！🎉</p>}
+                <p className="rank-mode-label">{MODE_LABEL[result.mode]}モードの ランキング</p>
+                <RankTable scores={data.scoresByMode[result.mode]} highlight={newRank ?? undefined} />
               </div>
 
               <div className="btn-row">
@@ -250,7 +273,12 @@ export default function App() {
           <div className="overlay">
             <div className="panel">
               <h2 className="panel-title">ランキング TOP{RANK_MAX}</h2>
-              <RankTable scores={data.scores} />
+              <div className="mode-row small" role="group" aria-label="ランキングのモードをえらぶ">
+                {MODES.map((m) => (
+                  <button key={m} className={`mode ${rankMode === m ? 'sel' : ''}`} onClick={() => setRankMode(m)}>{MODE_LABEL[m]}</button>
+                ))}
+              </div>
+              <RankTable scores={data.scoresByMode[rankMode]} />
               <button className="cta" onClick={() => setScreen('menu')}>とじる</button>
             </div>
           </div>

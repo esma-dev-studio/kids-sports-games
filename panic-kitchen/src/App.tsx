@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
 import { GameCanvas } from './components/GameCanvas'
-import { MODE_LABEL } from './game/config'
+import { MODE_LABEL, SPEED_STAR3_PLATES } from './game/config'
 import type { Mode, RoundResult } from './game/types'
 import { unlock, playFanfare } from './game/audio'
 import { addScore, load, qualifies, RANK_MAX, save, type SaveData, type ScoreEntry } from './game/storage'
@@ -8,6 +8,23 @@ import { BADGES, accumulate, earnedIds, nextBadges, type Badge } from './game/ba
 
 type Screen = 'menu' | 'tutorial' | 'playing' | 'result' | 'ranking' | 'badges'
 const MODES: Mode[] = ['easy', 'normal']
+
+// きょうのミッション（日付シードで3択から1つ選ぶ、小さな行動目標）
+interface Mission { id: string; text: string; check: (r: RoundResult) => boolean }
+const MISSIONS: Mission[] = [
+  { id: 'wilt0-3plates', text: 'しおれさせずに 3さら できあがらせよう', check: (r) => r.wilts === 0 && r.platesDone >= 3 },
+  { id: 'shuffle-streak3', text: 'シャッフルの あとに 3れんぞく せいかいしよう', check: (r) => r.postShuffleStreak >= 3 },
+  { id: 'golden-2', text: 'きらきら食材を 2つ とどけよう', check: (r) => r.goldenCaught >= 2 },
+]
+function todayKey(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+function missionOfDay(key: string): Mission {
+  let h = 0
+  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0
+  return MISSIONS[h % MISSIONS.length]
+}
 
 const MASCOT = { name: 'ぴよシェフ', emoji: '🐥' }
 const SPEECH = {
@@ -120,6 +137,12 @@ export default function App() {
   const [playKey, setPlayKey] = useState(0)
   const [newRank, setNewRank] = useState<number | null>(null)
   const [newBadges, setNewBadges] = useState<Badge[]>([])
+  const [missionJustDone, setMissionJustDone] = useState(false)
+
+  const today = useMemo(() => todayKey(), [])
+  const mission = useMemo(() => missionOfDay(today), [today])
+  const missionKey = `${today}:${mission.id}`
+  const missionAlreadyDone = data.missionDone.includes(missionKey)
 
   const persist = useCallback((patch: Partial<SaveData>) => {
     setData((prev) => {
@@ -151,7 +174,16 @@ export default function App() {
     const stats = accumulate(prev.stats, r)
     const earned = earnedIds(stats)
     const newly = earned.filter((id) => !prev.badges.includes(id))
-    let next: SaveData = { ...prev, stats, badges: earned }
+    const todayStr = todayKey()
+    const todayMission = missionOfDay(todayStr)
+    const mKey = `${todayStr}:${todayMission.id}`
+    const missionNewly = todayMission.check(r) && !prev.missionDone.includes(mKey)
+    let next: SaveData = {
+      ...prev,
+      stats,
+      badges: earned,
+      missionDone: missionNewly ? [...prev.missionDone, mKey].slice(-30) : prev.missionDone,
+    }
     let rank = -1
     if (qualifies(prev.scores, r.score)) {
       const res = addScore(next, prev.lastName || 'あなた', r.score)
@@ -161,6 +193,7 @@ export default function App() {
       save(next)
     }
     setData(next)
+    setMissionJustDone(missionNewly)
     setResult(r)
     setNewRank(rank >= 0 ? rank : null)
     setNewBadges(BADGES.filter((b) => newly.includes(b.id)))
@@ -183,6 +216,19 @@ export default function App() {
       : SPEECH.low
   }
   const celebrate = !!result && (result.isBestScore || newBadges.length > 0)
+
+  // 「あと少し」ナッジ：次の挑戦を具体的にして「もう1回」を後押しする
+  let nudge = ''
+  if (result) {
+    if (result.speedStars < 3) {
+      const need = SPEED_STAR3_PLATES - result.platesDone
+      if (need > 0 && need <= 2) nudge = `あと${need}さらで 手ぎわ★3！`
+    }
+    if (!nudge && !result.isBestScore && best.score > 0) {
+      const gap = best.score - result.score
+      if (gap > 0 && gap <= 50) nudge = `自己ベストまで あと${gap}てん！`
+    }
+  }
 
   return (
     <div className={data.reducedMotion ? 'app rm' : 'app'}>
@@ -225,6 +271,9 @@ export default function App() {
               </div>
               <NextBadges items={teaser} />
               <div className="best">
+                きょうのミッション｜{mission.text}{missionAlreadyDone ? '（きょうはクリア済み！）' : ''}
+              </div>
+              <div className="best">
                 自己ベスト｜スコア <b>{best.score}</b>　できあがり <b>{best.plates}</b>　コンボ <b>{best.combo}</b>
               </div>
               <div className="toggles">
@@ -249,8 +298,9 @@ export default function App() {
                 <li>いろんな方向から食材が飛んでくるよ。</li>
                 <li>食材をドラッグして、色とアイコンが合うお皿へ。</li>
                 <li>お皿がいっぱいで「できあがり！」ボーナス。まちがい・落としに注意。</li>
+                <li>食材は ほうっておくと しおれちゃうよ。はやめに はこぼう！</li>
               </ol>
-              <p className="panel-sub">ときどきお皿の場所がシャッフル！ 全体をよく見てね。50秒で1ゲーム。</p>
+              <p className="panel-sub">ときどきお皿の場所がシャッフル！ 全体をよく見てね。数字キーでも おさらに送れるよ。50秒で1ゲーム。</p>
               <button className="cta" onClick={onTutorialDone}>わかった！</button>
             </div>
           </div>
@@ -275,6 +325,9 @@ export default function App() {
                   <span className="metric-sub">できあがり {result.platesDone} 皿</span>
                 </div>
               </div>
+
+              {missionJustDone && <p className="rank-in">きょうのミッション たっせい！「{mission.text}」</p>}
+              {nudge && <p className="panel-sub big">{nudge}</p>}
 
               {newBadges.length > 0 && (
                 <div className="new-badges">

@@ -38,10 +38,28 @@ function blip(freqs: number[], dur: number, type: OscillatorType, gain: number):
   })
 }
 
-// インターセプト成功。stepが大きいほど1音ずつ高く（コンボ音階）
+// 短いアタック音（"パシッ"）。キャッチの触覚的な手応えを補強する。
+function click(freq: number, gain: number): void {
+  const c = ac()
+  if (!c) return
+  const now = c.currentTime
+  const o = c.createOscillator()
+  const g = c.createGain()
+  o.type = 'square'
+  o.frequency.setValueAtTime(freq, now)
+  g.gain.setValueAtTime(gain, now)
+  g.gain.exponentialRampToValueAtTime(0.0001, now + 0.045)
+  o.connect(g)
+  g.connect(c.destination)
+  o.start(now)
+  o.stop(now + 0.05)
+}
+
+// インターセプト成功。stepが大きいほど1音ずつ高く（コンボ音階）。頭に短いクリックを重ねてパシッ感を出す。
 export function playCatch(step?: number): void {
   const ratio = step ? Math.pow(2, Math.min(12, Math.max(0, step)) / 12) : 1
-  blip([620 * ratio, 930 * ratio], 0.13, 'triangle', 0.16)
+  click(1500 * Math.min(1.4, 1 + (step ?? 0) * 0.015), 0.11)
+  blip([620 * ratio, 930 * ratio], 0.1, 'triangle', 0.17)
 }
 // はやよみ（早めの先回り成功）
 export function playEarly(): void {
