@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>あそんで きたえる ミニゲーム</title>
+<meta name="description" content="味方を見きわめる反射ゲームと、食材を仕分ける全体把握ゲーム。子ども向けの知覚トレあそび。" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@500;700;800&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  :root {
+    --go-1: #14b89a;
+    --go-2: #0f8f78;
+    --kitchen-1: #ff9d3d;
+    --kitchen-2: #e0771f;
+    --mirai-1: #4f8fe8;
+    --mirai-2: #1c3b73;
+    --ink: #223330;
+    --ink-soft: #5c6b64;
+  }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    font-family: 'M PLUS Rounded 1c', system-ui, -apple-system, 'Segoe UI', 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+    font-weight: 500;
+    color: var(--ink);
+    background:
+      radial-gradient(1100px 520px at 12% -8%, rgba(20, 184, 154, .16), transparent 60%),
+      radial-gradient(1000px 480px at 100% 0%, rgba(255, 157, 61, .18), transparent 55%),
+      radial-gradient(900px 600px at 50% 120%, rgba(79, 143, 232, .16), transparent 60%),
+      linear-gradient(160deg, #f4faf7, #fdf3e6 55%, #eef4fb);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 40px 16px 44px;
+  }
+
+  header { text-align: center; margin-bottom: 32px; max-width: 640px; }
+  .kicker {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 16px;
+    border-radius: 999px;
+    background: linear-gradient(120deg, rgba(20,184,154,.16), rgba(79,143,232,.16));
+    color: var(--go-2);
+    font-weight: 700;
+    font-size: 12px;
+    letter-spacing: .08em;
+    margin-bottom: 14px;
+  }
+  h1 {
+    margin: 0;
+    font-weight: 800;
+    font-size: clamp(26px, 6vw, 38px);
+    letter-spacing: .02em;
+    color: #16221f;
+  }
+  .sub { margin: 10px 0 0; color: var(--ink-soft); font-size: 15px; line-height: 1.7; }
+
+  .cards {
+    display: grid;
+    gap: 22px;
+    width: 100%;
+    max-width: 760px;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  }
+
+  .card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    text-decoration: none;
+    color: inherit;
+    background: #fff;
+    border-radius: 24px;
+    padding: 24px 22px;
+    box-shadow: 0 2px 6px rgba(20, 30, 28, .06), 0 16px 32px -12px rgba(20, 30, 28, .18);
+    border: 1px solid rgba(20, 30, 28, .06);
+    isolation: isolate;
+    overflow: hidden;
+    transition: transform .18s ease, box-shadow .18s ease;
+  }
+  .card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    opacity: .55;
+    background: linear-gradient(160deg, var(--accent-1, #fff) 0%, #ffffff 42%);
+  }
+  .card::after {
+    content: "";
+    position: absolute;
+    left: 0; right: 0; top: 0;
+    height: 6px;
+    background: linear-gradient(90deg, var(--accent-1), var(--accent-2));
+  }
+  .card:hover {
+    transform: translateY(-6px);
+    box-shadow: 0 4px 10px rgba(20, 30, 28, .08), 0 24px 40px -14px rgba(20, 30, 28, .26);
+  }
+  .card:focus-visible {
+    outline: 3px solid var(--accent-2);
+    outline-offset: 3px;
+  }
+
+  .card.go     { --accent-1: rgba(20,184,154,.16); --accent-2: var(--go-2); }
+  .card.kitchen{ --accent-1: rgba(255,157,61,.18); --accent-2: var(--kitchen-2); }
+  .card.mirai  { --accent-1: rgba(79,143,232,.16); --accent-2: var(--mirai-2); }
+
+  .badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 60px; height: 60px; border-radius: 18px; margin-bottom: 16px;
+    font-size: 28px; font-weight: 800; color: #fff;
+    box-shadow: 0 8px 18px -6px rgba(0,0,0,.35);
+  }
+  .go .badge      { background: linear-gradient(150deg, var(--go-1), var(--go-2)); }
+  .kitchen .badge { background: linear-gradient(150deg, var(--kitchen-1), var(--kitchen-2)); }
+  .mirai .badge   { background: linear-gradient(150deg, var(--mirai-1), var(--mirai-2)); }
+
+  .card h2 { margin: 0 0 8px; font-size: 20px; font-weight: 800; letter-spacing: .01em; }
+  .card p { margin: 0 0 18px; color: var(--ink-soft); font-size: 13.5px; line-height: 1.7; flex-grow: 1; }
+
+  .play {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-weight: 700; font-size: 14.5px;
+    padding: 11px 22px; border-radius: 999px; color: #fff;
+    align-self: flex-start;
+    box-shadow: 0 8px 16px -6px rgba(0,0,0,.3);
+    transition: transform .15s ease;
+  }
+  .card:hover .play { transform: translateX(2px); }
+  .go .play      { background: linear-gradient(120deg, var(--go-1), var(--go-2)); }
+  .kitchen .play { background: linear-gradient(120deg, var(--kitchen-1), var(--kitchen-2)); }
+  .mirai .play   { background: linear-gradient(120deg, var(--mirai-1), var(--mirai-2)); }
+
+  footer {
+    margin-top: 34px;
+    text-align: center;
+    color: #7a8079;
+    font-size: 12px;
+    line-height: 1.8;
+    max-width: 560px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .card, .play { transition: none; }
+    .card:hover { transform: none; }
+    .card:hover .play { transform: none; }
+  }
+</style>
+</head>
+<body>
+  <header>
+    <span class="kicker">PLAY &amp; TRAIN</span>
+    <h1>あそんで きたえる ミニゲーム</h1>
+    <p class="sub">はんしゃ・見きわめ・全体把握・先読みのちからを、あそびながらそだてる3つのゲーム</p>
+  </header>
+
+  <main class="cards">
+    <a class="card go" href="./signal-hero/">
+      <span class="badge">○</span>
+      <h2>まもれ！シグナル・ヒーロー</h2>
+      <p>みかたが光ったらタッチ、敵のニセ光はがまん。速く見きわめる反射ゲーム。</p>
+      <span class="play">あそぶ →</span>
+    </a>
+
+    <a class="card kitchen" href="./panic-kitchen/">
+      <span class="badge">▲</span>
+      <h2>パニックキッチン</h2>
+      <p>とんでくる食材を、色とアイコンの合うお皿へ仕分け。全体をよく見る大混雑アクション。</p>
+      <span class="play">あそぶ →</span>
+    </a>
+
+    <a class="card mirai" href="./mirai-catch/">
+      <span class="badge">🎯</span>
+      <h2>みらいキャッチ</h2>
+      <p>飛んでくる球の“未来の通り道”を先読みして、着く前に先回りキャッチ。予測の力の下地づくり。</p>
+      <span class="play">あそぶ →</span>
+    </a>
+  </main>
+
+  <footer>
+    鍛わるのは主に「速く見きわめる・周囲をよく見る」知覚・認知のちからです。実際のバスケットボールやサッカーの上達を保証するものではありません。
+  </footer>
+</body>
+</html>
